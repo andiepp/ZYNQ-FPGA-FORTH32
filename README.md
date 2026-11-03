@@ -147,7 +147,9 @@ python tools/test_float_words.py
 .\sim\run_mcu.ps1                              # the FPU against its bit-exact model
 ```
 
-The app runs from `app\src\ZynqForth\bin\Debug\net10.0-windows\ZynqForth32.exe`. It keeps
+`.\tools\Install-App.ps1` installs the released app (from `dist\publish`, or downloaded from
+the GitHub release) for the current user and puts a **ZYNQ-FORTH32** shortcut on the desktop.
+A development build runs from `app\src\ZynqForth\bin\Debug\net10.0-windows\ZynqForth32.exe`. It keeps
 its settings in `%LocalAppData%\ZYNQ-FPGA-FORTH32`, apart from the 16-bit app's. Its skins
 are generated from one colour table: edit `app/tools/make_skins.py` and run it.
 
