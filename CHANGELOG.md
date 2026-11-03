@@ -4,7 +4,7 @@ ZYNQ-FPGA-FORTH32 continues the version numbers of the 16-bit
 [ZYNQ-FORTH](https://github.com/andiepp/ZYNQ-FORTH) (whose changelog has releases 1.0 to
 2.3), as its 32-bit generation 3.x.
 
-## 3.0 — unreleased
+## 3.0 — 2026-11-03
 
 Started from ZYNQ-FORTH 2.3.
 
