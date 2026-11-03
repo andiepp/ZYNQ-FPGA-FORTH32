@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ZynqForth</RootNamespace>
+    <AssemblyName>ZynqForth32</AssemblyName>
+    <AssemblyTitle>ZYNQ-FPGA-FORTH32</AssemblyTitle>
+    <Description>ZYNQ-FPGA-FORTH32: terminal, editor, dictionary, stacks and board view for the HF32 Forth (32-bit, floating point) on the Arty Z7-20.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ZynqForth.Core\ZynqForth.Core.csproj" />
+  </ItemGroup>
+
+  <!-- the user manual, opened by the Manual button (tools/manual_pdf.py builds it) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\docs\Manual.pdf" LogicalName="ZynqForth.Manual.pdf" />
+  </ItemGroup>
+
+</Project>
