@@ -200,8 +200,9 @@ Four new functions give the full values (big-endian like the others):
 | 0x47 dictionary snapshot, 32 bits | – | as 0x40: count (u16), then `latest` and `here` as u32 (10 bytes) |
 | 0x48 dictionary page, 32 bits | first index (u16) | as 0x41, each entry's code address as u32: count (u8), then per entry xt (u32), flags (u8), length (u8), name; zero-padded to R − 2 |
 
-0x45 and 0x46 refuse with 0x15 (busy) like 0x42. A HASE panel that shows the 32-bit stack and
-the float stack needs these; that is a later HASE change.
+0x45 and 0x46 refuse with 0x15 (busy) like 0x42. HASE-Lab's Forth-Lab family reads them from
+firmware 3.0 on (ADR-0092, 2026-11-03): its panel shows the 32-bit data stack, the float stack
+and five-digit dictionary addresses, and opens this project's manual.
 
 ## Example in Python
 

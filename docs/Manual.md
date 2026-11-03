@@ -91,11 +91,13 @@ to it, and back as soon as a terminal program or the app sends anything. Output 
 printed meanwhile and nobody fetched then appears first (docs/Protocol.md, "HASE mode").
 
 For HASE, firmware 3.0 is the same Forth-Lab node as the 16-bit firmware (node type
-AE.07.30.80, reporting firmware 3.0), so today's HASE Forth-Lab panel works with it
-unchanged. Its stack view still shows 16-bit cells, though: values outside −32768..32767
-appear clipped, and dictionary addresses above `$FFFF` appear as `$FFFF`. The new MCNF
-functions 0x45 to 0x48 carry the 32-bit stack, the float stack and full addresses for a
-later HASE version (docs/Protocol.md).
+AE.07.30.80, reporting firmware 3.0), so a HASE Forth-Lab panel built for the 16-bit board
+works with it unchanged, showing 16-bit cells: values outside −32768..32767 appear clipped,
+and dictionary addresses above `$FFFF` appear as `$FFFF`. Since HASE-Lab's ADR-0092
+(2026-11-03) the panel reads the new MCNF functions 0x45 to 0x48 (docs/Protocol.md) for
+firmware 3.x: its heading says HF32, the stack view shows 32-bit cells and, under them, the
+float stack, dictionary addresses have five hex digits, and its Manual button opens this
+manual.
 
 ### First session
 
