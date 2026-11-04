@@ -130,7 +130,7 @@ last ` ok`, the same `.s` and `f.s` would have shown there. At most 20 items eac
 
 ### board
 
-Raw register values in hex; the layout is in [design.md](design.md#axi-lite-registers-arm-side).
+Raw register values in hex; the layout is in [design.md](design.md#61-axi-lite-registers-arm-side).
 
 ```
 board 00120115                LEDs, RGB LEDs, buttons, switches

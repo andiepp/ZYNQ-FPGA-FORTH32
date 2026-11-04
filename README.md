@@ -13,7 +13,7 @@ HF16) and kept separate from it: the board I/O, the app and the word names are t
   Forth primitives: one instruction per clock at 50 MHz, 128 KB of RAM.
 - A **floating-point unit** for IEEE single precision (round to nearest even), with its own
   **float stack**: `f+ f- f*` in 5–6 clocks, `f/ fsqrt` in 31, conversions in 2–4.
-- A **Forth kernel** of 354 words, written in Forth and cross-compiled on the PC: the
+- A **Forth kernel** of 414 words, written in Forth and cross-compiled on the PC: the
   interpreter and compiler, the Forth-2012 floating-point words (literals like `1.5e-3`,
   `f. fs. fe.`, `fsin fcos ftan fatan2 fasin facos fexp fln flog f** fsqrt`…), correctly
   rounded number conversion, the board's LEDs, RGB LEDs, buttons and switches, 36 shield
@@ -52,8 +52,9 @@ HF16) and kept separate from it: the board I/O, the app and the word names are t
 - [docs/Manual.md](docs/Manual.md) — the user manual: getting started, the app, the
   interpreter, every word, floating point, examples, troubleshooting.
 - [docs/Protocol.md](docs/Protocol.md) — the serial protocol and the HASE functions.
-- [docs/design.md](docs/design.md) — the HF32 instruction set, the floating-point unit,
-  memory and register maps.
+- [docs/design.md](docs/design.md), also as [docs/Design.pdf](docs/Design.pdf) — the design
+  in detail: the HF32 CPU and its instruction set, the floating-point unit, memory, I/O and
+  register maps, the peripherals, the ARM program, the Forth kernel, tools and verification.
 - [docs/PatternGenerator.md](docs/PatternGenerator.md) — the pattern generator's design.
 
 ## Try it

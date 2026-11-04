@@ -8,8 +8,9 @@
     sw/build_boot.ps1: build\boot\BOOT.bin and the FSBL).
     1. Runs the app's tests and publishes the app as one self-contained ZynqForth32.exe for
        Windows x64 (no .NET installation needed).
-    2. Builds the manual's PDF (needs Python with 'markdown' and Microsoft Edge; skipped
-       with -SkipPdf, then the committed docs\Manual.pdf is used).
+    2. Builds the manual's and the design document's PDFs (needs Python with 'markdown' and
+       Microsoft Edge; skipped with -SkipPdf, then the committed docs\Manual.pdf and
+       docs\Design.pdf are used).
     3. Writes to dist\:
          ZYNQ-FPGA-FORTH32-<version>-windows-x64.zip   app, firmware, flash script, documents, examples
          ZYNQ-FPGA-FORTH32-firmware-<version>.zip      BOOT.bin, fsbl.elf and the flash script
@@ -51,10 +52,12 @@ Copy-Item (Join-Path $dist 'publish\ZynqForth32.exe') $stage
 if (-not $SkipPdf) {
     python (Join-Path $root 'tools\manual_pdf.py')
     if ($LASTEXITCODE) { throw 'manual PDF failed' }
+    python (Join-Path $root 'tools\manual_pdf.py') design
+    if ($LASTEXITCODE) { throw 'design PDF failed' }
 }
 
 Copy-Item $boot, $fsbl, (Join-Path $root 'sw\program_flash.ps1') $firmware
-Copy-Item (Join-Path $root 'docs\Manual.pdf'), (Join-Path $root 'docs\Protocol.md'), (Join-Path $root 'README.md'),
+Copy-Item (Join-Path $root 'docs\Manual.pdf'), (Join-Path $root 'docs\Design.pdf'), (Join-Path $root 'docs\Protocol.md'), (Join-Path $root 'README.md'),
           (Join-Path $root 'CHANGELOG.md'), (Join-Path $root 'LICENSE') $stage
 Copy-Item -Recurse (Join-Path $root 'examples') $stage
 Copy-Item (Join-Path $root 'tools\zforth.py') $stage

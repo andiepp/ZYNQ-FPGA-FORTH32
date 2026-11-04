@@ -4,6 +4,13 @@ ZYNQ-FPGA-FORTH32 continues the version numbers of the 16-bit
 [ZYNQ-FORTH](https://github.com/andiepp/ZYNQ-FORTH) (whose changelog has releases 1.0 to
 2.3), as its 32-bit generation 3.x.
 
+## Unreleased
+
+- **Design document**: `docs/design.md`, also as `docs/Design.pdf` (`python
+  tools/manual_pdf.py design`), now describes the whole design in detail: the HF32 CPU and its
+  memory timing, the FPU's datapath, every peripheral, the ARM program, the Forth kernel
+  layer by layer, tools, verification and the build. Release packages include the PDF.
+
 ## 3.1 — 2026-11-04
 
 - **Serial interfaces in hardware**, every signal on any pin: two UARTs (8N1, any baud
