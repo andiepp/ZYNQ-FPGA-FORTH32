@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Render docs/Manual.md to docs/Manual.pdf, or docs/design.md to docs/Design.pdf
-(Markdown -> HTML -> headless Edge).
+"""Render docs/Manual.md to docs/Manual.pdf, or docs/design.md to
+docs/Implementation-Details.pdf (Markdown -> HTML -> headless Edge).
 
     python tools/manual_pdf.py [manual|design] [--keep-html]
 
@@ -30,9 +30,10 @@ DOCS = {
     'manual': dict(src='Manual.md', pdf='Manual.pdf', label='User Manual', toc=False,
                    sub='User Manual &mdash; a 32-bit Forth CPU with floating point on the '
                        'Digilent Arty Z7-20'),
-    'design': dict(src='design.md', pdf='Design.pdf', label='Design', toc=True,
-                   sub='Design &mdash; the HF32 CPU, its FPU and peripherals, the ARM side '
-                       'and the Forth kernel'),
+    'design': dict(src='design.md', pdf='Implementation-Details.pdf',
+                   label='Implementation Details', toc=True,
+                   sub='Implementation Details &mdash; the HF32 CPU, its FPU and peripherals, '
+                       'the ARM side and the Forth kernel'),
 }
 
 EDGE_PATHS = [

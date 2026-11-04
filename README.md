@@ -52,7 +52,7 @@ HF16) and kept separate from it: the board I/O, the app and the word names are t
 - [docs/Manual.md](docs/Manual.md) — the user manual: getting started, the app, the
   interpreter, every word, floating point, examples, troubleshooting.
 - [docs/Protocol.md](docs/Protocol.md) — the serial protocol and the HASE functions.
-- [docs/design.md](docs/design.md), also as [docs/Design.pdf](docs/Design.pdf) — the design
+- [docs/design.md](docs/design.md), also as [docs/Implementation-Details.pdf](docs/Implementation-Details.pdf) — the design
   in detail: the HF32 CPU and its instruction set, the floating-point unit, memory, I/O and
   register maps, the peripherals, the ARM program, the Forth kernel, tools and verification.
 - [docs/PatternGenerator.md](docs/PatternGenerator.md) — the pattern generator's design.

@@ -1,4 +1,4 @@
-# ZYNQ-FPGA-FORTH32 — Design
+# ZYNQ-FPGA-FORTH32 — Implementation Details
 
 This document describes how ZYNQ-FPGA-FORTH32 is built: the HF32 CPU and its
 floating-point unit in the FPGA, the memory and the peripherals around it, the program on the
@@ -8,7 +8,7 @@ the Forth is in the [user manual](Manual.md), the serial protocol in [Protocol.m
 and the pattern generator's internals in [PatternGenerator.md](PatternGenerator.md).
 
 All figures in this document are those of release 3.1 (firmware 3.1, protocol 2). The PDF
-version, `docs/Design.pdf`, is generated from this file by `python tools/manual_pdf.py design`.
+version, `docs/Implementation-Details.pdf`, is generated from this file by `python tools/manual_pdf.py design`.
 
 ## 1 Overview
 

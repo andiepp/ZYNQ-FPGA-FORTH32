@@ -6,7 +6,7 @@ ZYNQ-FPGA-FORTH32 continues the version numbers of the 16-bit
 
 ## Unreleased
 
-- **Design document**: `docs/design.md`, also as `docs/Design.pdf` (`python
+- **Implementation details**: `docs/design.md`, also as `docs/Implementation-Details.pdf` (`python
   tools/manual_pdf.py design`), now describes the whole design in detail: the HF32 CPU and its
   memory timing, the FPU's datapath, every peripheral, the ARM program, the Forth kernel
   layer by layer, tools, verification and the build. Release packages include the PDF.
