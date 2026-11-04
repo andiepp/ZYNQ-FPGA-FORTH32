@@ -4,7 +4,7 @@ ZYNQ-FPGA-FORTH32 continues the version numbers of the 16-bit
 [ZYNQ-FORTH](https://github.com/andiepp/ZYNQ-FORTH) (whose changelog has releases 1.0 to
 2.3), as its 32-bit generation 3.x.
 
-## 3.1 — unreleased
+## 3.1 — 2026-11-04
 
 - **Serial interfaces in hardware**, every signal on any pin: two UARTs (8N1, any baud
   rate, 64-byte FIFOs), two SPI masters (modes 0..3, 8/16/32 bits, MSB/LSB first, up to

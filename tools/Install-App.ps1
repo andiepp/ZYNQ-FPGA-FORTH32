@@ -13,11 +13,11 @@
 
 .EXAMPLE
     .\tools\Install-App.ps1
-    .\tools\Install-App.ps1 -Version 3.0 -InstallDir D:\Apps\ZYNQ-FPGA-FORTH32
+    .\tools\Install-App.ps1 -Version 3.1 -InstallDir D:\Apps\ZYNQ-FPGA-FORTH32
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '3.0',
+    [string]$Version = '3.1',
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'ZYNQ-FPGA-FORTH32\app'),
     [string]$Exe
 )
