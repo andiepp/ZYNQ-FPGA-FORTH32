@@ -64,7 +64,7 @@ public sealed class BoardView : FrameworkElement
         Brush pcb = Skins.Brush(this, "Zf.BoardPcb", Brushes.DarkGreen);
         PatternStatus? pg = s?.Pattern;
 
-        const double left = 806;
+        const double left = 826;
         Label(dc, "PMOD · PATTERN", left - 20, 34, text, 10);
         foreach ((string name, int first, double y) in new[] { ("JA", 0, 56.0), ("JB", 8, 112.0) })
         {
@@ -190,13 +190,17 @@ public sealed class BoardView : FrameworkElement
 
         double left = 300;
         Label(dc, "SHIELD", left, 34, text, 10);
-        Legend(dc, left + 60, 34, [(high, "in 1"), (low, "in 0"), (driven, "out 1"), (drivenLow, "out 0"), (pwm, "PWM")], text, outline);
+        Legend(dc, left + 60, 34, [(high, "in 1"), (low, "in 0"), (driven, "out 1"), (drivenLow, "out 0"), (pwm, "function")], text, outline);
 
-        // upper row IO0..IO13 then A0..A5, lower row IO26..IO41 (as the shield headers)
+        // upper row IO0..IO13 then A0..A5, lower row IO26..IO41 (as the shield headers), then
+        // SCL, SDA and the SPI header's pins
         int[] upper = [.. Enumerable.Range(0, 20)];
         int[] lower = [.. Enumerable.Range(26, 16)];
+        int[] extra = [.. Enumerable.Range(42, 6)];
         DrawPinRow(dc, s, upper, left, 70, text, outline, high, low, driven, drivenLow, pwm);
         DrawPinRow(dc, s, lower, left, 128, text, outline, high, low, driven, drivenLow, pwm);
+        DrawPinRow(dc, s, extra, left + 16 * Pitch + 4, 128, text, outline, high, low, driven, drivenLow, pwm,
+                   pitch: 22, labelSize: 8, functionBelow: true);
 
         if (s is null)
         {
@@ -223,20 +227,26 @@ public sealed class BoardView : FrameworkElement
             }
         }
 
+        if (s.ToneOn)
+        {
+            channels.Add("tone on");
+        }
+
         Label(dc, channels.Count == 0 ? "PWM off" : string.Join("   ", channels), Width0 - 16, 182, text, 11,
               align: TextAlignment.Right);
     }
 
     private void DrawPinRow(DrawingContext dc, BoardState? s, int[] pins, double left, double y, Brush text, Pen outline,
-                            Brush high, Brush low, Brush driven, Brush drivenLow, Brush pwm)
+                            Brush high, Brush low, Brush driven, Brush drivenLow, Brush pwm,
+                            double pitch = Pitch, double labelSize = 9, bool functionBelow = false)
     {
         for (int i = 0; i < pins.Length; i++)
         {
             int number = pins[i];
             ShieldPin? pin = s?.Pins.FirstOrDefault(p => p.Number == number);
-            double x = left + i * Pitch;
+            double x = left + i * pitch;
             Brush fill = pin is null ? low
-                : pin.PwmChannel is not null ? pwm
+                : pin.PwmChannel is not null || pin.Function is not null ? pwm
                 : pin.Driven ? (pin.Level ? driven : drivenLow)
                 : pin.Level ? high : low;
             var rect = new Rect(x, y, 16, 16);
@@ -246,8 +256,14 @@ public sealed class BoardView : FrameworkElement
             {
                 Label(dc, "~" + channel, x + 8, y - 13, text, 9, align: TextAlignment.Center);
             }
+            else if (pin?.Function is string function && !(functionBelow && function == BoardState.Label(number)))
+            {
+                // the narrow SCL/SDA/SPI header pins carry it under their name, staggered
+                double ly = functionBelow ? y + 30 + (i % 2) * 10 : y - 12;
+                Label(dc, function, x + 8, ly, text, 8, align: TextAlignment.Center);
+            }
 
-            Label(dc, BoardState.Label(number), x + 8, y + 19, text, 9, align: TextAlignment.Center);
+            Label(dc, BoardState.Label(number), x + 8, y + 19, text, labelSize, align: TextAlignment.Center);
         }
     }
 

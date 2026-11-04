@@ -42,7 +42,7 @@ foreach seg [get_bd_addr_segs -of_objects [get_bd_addr_spaces ps7/Data]] {
 }
 
 foreach {port dir msb} {led O 3  rgb O 5  btn I 3  sw I 1
-                        ck_io IO 13  ck_a IO 5  ck_ioh IO 15
+                        ck_io IO 13  ck_a IO 5  ck_ioh IO 15  ck_x IO 5  aud O 1
                         an_p I 5  an_n I 5  ad_p I 2  ad_n I 2  pmod O 15} {
     create_bd_port -dir $dir -from $msb -to 0 $port
     connect_bd_net [get_bd_ports $port] [get_bd_pins forth/$port]

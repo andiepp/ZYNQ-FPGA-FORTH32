@@ -87,9 +87,20 @@ set_property -dict { PACKAGE_PIN B20  IOSTANDARD LVCMOS33 } [get_ports { ad_n[1]
 set_property -dict { PACKAGE_PIN B19  IOSTANDARD LVCMOS33 } [get_ports { ad_p[2] }];  #VAUX8P A10/A11
 set_property -dict { PACKAGE_PIN A20  IOSTANDARD LVCMOS33 } [get_ports { ad_n[2] }];  #VAUX8N A10/A11
 
+## Pins 42..47: the shield's SCL and SDA (pull-ups on the board) and the SPI header's MISO,
+## MOSI, SCK and SS (pull-ups here, like the IO pins)
+set_property -dict { PACKAGE_PIN P16  IOSTANDARD LVCMOS33 } [get_ports { ck_x[0] }]; #Sch=CK_SCL
+set_property -dict { PACKAGE_PIN P15  IOSTANDARD LVCMOS33 } [get_ports { ck_x[1] }]; #Sch=CK_SDA
+set_property -dict { PACKAGE_PIN W15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ck_x[2] }]; #Sch=CK_MISO
+set_property -dict { PACKAGE_PIN T12  IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ck_x[3] }]; #Sch=CK_MOSI
+set_property -dict { PACKAGE_PIN H15  IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ck_x[4] }]; #Sch=CK_SCK
+set_property -dict { PACKAGE_PIN F16  IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ck_x[5] }]; #Sch=CK_SS
+## Audio out: AUD_PWM into the board's 4th-order low-pass filter, AUD_SD enables the amplifier
+set_property -dict { PACKAGE_PIN R18  IOSTANDARD LVCMOS33 } [get_ports { aud[0] }]; #Sch=AUD_PWM
+set_property -dict { PACKAGE_PIN T17  IOSTANDARD LVCMOS33 } [get_ports { aud[1] }]; #Sch=AUD_SD
 ## Human-facing and software-timed I/O: no I/O timing
-set_false_path -from [get_ports { btn[*] sw[*] ck_io[*] ck_a[*] ck_ioh[*] }]
-set_false_path -to   [get_ports { led[*] rgb[*] ck_io[*] ck_a[*] ck_ioh[*] }]
+set_false_path -from [get_ports { btn[*] sw[*] ck_io[*] ck_a[*] ck_ioh[*] ck_x[*] }]
+set_false_path -to   [get_ports { led[*] rgb[*] ck_io[*] ck_a[*] ck_ioh[*] ck_x[*] aud[*] }]
 
 ## Pattern generator: channels 0..7 on Pmod JA, 8..15 on JB (pins 1-4, 7-10), fast edges.
 ## The output and enable registers sit in the I/O blocks (rtl/patgen.v), so all channels

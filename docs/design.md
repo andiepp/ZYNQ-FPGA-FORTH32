@@ -24,8 +24,12 @@ the 16-bit Forth run here.
                                                                     ├─ PWM: 4 channels on any shield pin (rtl/pwm.v)
                                                                     ├─ XADC scanner: A0..A11, temperature, supplies
                                                                     │   (rtl/xadc_scan.v)
-                                                                    └─ pattern generator: 16 channels on the Pmods
-                                                                        (rtl/patgen.v, 200 MHz)
+                                                                    ├─ pattern generator: 16 channels on the Pmods
+                                                                    │   (rtl/patgen.v, 200 MHz)
+                                                                    ├─ 2 UARTs, 2 SPI masters, 1 I2C master on any pin
+                                                                    │   (rtl/uart.v, spi.v, i2c.v)
+                                                                    ├─ DDS on any pin (rtl/dds.v, 200 MHz)
+                                                                    └─ tone generator on the audio jack (rtl/tone.v)
 ```
 
 ## Machine model
@@ -154,8 +158,8 @@ the correctly rounded decimal value of the float, across the normal range.
 
 ## I/O map
 
-Register k is at `0x100000 + 4k`; only address bits 8..2 are decoded, so the map repeats
-every 512 bytes above 0x100000. Registers are 32 bits wide; most use only their low bits.
+Register k is at `0x100000 + 4k`; only address bits 9..2 are decoded, so the map repeats
+every 1 KB above 0x100000. Registers are 32 bits wide; most use only their low bits.
 
 | Address | Read | Write |
 |---|---|---|
@@ -175,6 +179,11 @@ every 512 bytes above 0x100000. Registers are 32 bits wide; most use only their 
 | 0x100108 + 16c | PWM channel c: duty in 1/65536 of the period, 0xFFFF = always high | same |
 | 0x10010C + 16c | PWM channel c: bit 15 on, bits 5..0 pin number | same |
 | 0x100180..0x1001A8 | pattern generator registers 0..10 at 0x100180 + 4r, see [PatternGenerator.md](PatternGenerator.md#forth-interface) | |
+| 0x100200 + 16u | UART u (0, 1): +0 data (read pops a received byte, bit 8 = one was there; write sends), +4 status (bit 0 received, 1 room to send, 2 idle, 3 lost byte, 4 framing error; a write clears 3 and 4), +8 clocks per bit, +12 bit 15 on, bits 13..8 RX pin, 5..0 TX pin | |
+| 0x100220 + 32s | SPI master s (0, 1): +0 data (write starts a transfer, read gives the last answer), +4 bit 0 busy, +8 control (bit 0 CPHA, 1 CPOL, 2 LSB first, 5..4 width 8/16/32), +12 clocks per half SCK period (at least 2), +16 bit 31 on, bits 21..16 MISO, 13..8 MOSI, 5..0 SCK pin | |
+| 0x100260 | I2C master: +0 command (write: bits 10..8 1 start, 2 stop, 3 write byte, 4 read + ACK, 5 read + NACK, bits 7..0 the byte; read: bit 31 busy, 9 timeout, 8 ACK received, 7..0 byte read), +4 clocks per quarter SCL period, +8 bit 15 on, bits 13..8 SDA, 5..0 SCL pin | |
+| 0x100280 | DDS: +0 phase step per 200 MHz tick, +4 bit 0 on, bits 13..8 pin (read: bit 31 not yet taken over) | |
+| 0x1002A0 | tone generator: +0 phase step per 50 MHz clock, +4 bit 0 on, bits 2..1 waveform (sine, square, triangle, sawtooth), +8 volume 0..65535, +12 bit 0 sounding, bits 31..16 current volume | |
 
 The PWM and pattern generator modules are those of the 16-bit design; each 16-bit register
 of theirs is one cell here (its low half).
@@ -186,9 +195,42 @@ of theirs is one cell here (its low half).
 | 0..13 | port 0 bits 0..13 | IO0..IO13 | `ck_io[13:0]` | yes |
 | 14..19 | port 0 bits 14..15, port 1 bits 0..3 | A0..A5 as digital pins | `ck_a[5:0]` | no (shares the analog divider node) |
 | 26..41 | port 1 bits 10..15, port 2 bits 0..9 | IO26..IO41 | `ck_ioh[15:0]` | yes |
+| 42..47 | port 2 bits 10..15 | SCL, SDA, the SPI header's MISO, MOSI, SCK, SS | `ck_x[5:0]` | SCL/SDA: resistors on the board; the header: yes |
 
-Pins 20..25 and 42..47 do not exist: they read 0 and ignore writes. The Forth word `pin`
-rejects them.
+Pins 20..25 do not exist: they read 0 and ignore writes. The Forth word `pin` rejects them.
+
+### Pin router
+
+Every output of a peripheral names its pin (PWM channels 0..3, UART TX 0/1, SPI SCK and
+MOSI 0/1, the DDS: push-pull; I2C SCL and SDA: open drain, driven low or left to the
+pull-up). An enabled peripheral owns that pin: the pin's latch and direction no longer
+count, it is driven with the peripheral's level, and several owners of one pin would be
+ORed (the Forth words refuse that: `claim`, section 5.16 of the manual). Inputs (UART RX,
+SPI MISO, I2C SCL/SDA) read the named pin through its two-flop synchronizer. AXI register
+0x38 lets the ARM read the table: a write selects entry 0..13 (UART0 TX/RX, UART1 TX/RX,
+SPI0 SCK/MOSI/MISO, SPI1 SCK/MOSI/MISO, I2C SCL/SDA, DDS, tone), a read gives bits 19..16
+the selection, bit 15 on, bits 5..0 the pin (63 for the tone: the audio jack).
+
+### Serial interfaces, DDS, tone
+
+- **UART** (`rtl/uart.v`): 8N1, clocks-per-bit divider (8 or more), 64-byte FIFOs; the
+  receiver samples each bit in its middle after the start bit's falling edge.
+- **SPI** (`rtl/spi.v`): SCK = 50 MHz / (2 × half), half at least 2. MISO comes through the
+  synchronizer and is taken at the end of each bit, just before the next change edge, which
+  in every mode is after the slave set it and leaves 2 × half − 2 clocks for the slave.
+- **I2C** (`rtl/i2c.v`): quarter-period steps; a bit is 2 quarters low, 2 high, sampled a
+  quarter after SCL rose. Waits while a slave holds SCL low, for at most 2^20 clocks.
+- **DDS** (`rtl/dds.v`): a 32-bit phase accumulator on the 200 MHz clock, its top bit the
+  output; settings cross with a toggle handshake (resent if changed meanwhile).
+- **Tone** (`rtl/tone.v`): phase accumulator at 50 MHz, quarter-wave sine table (256
+  entries, `tools/make_sine.py`), square, triangle, sawtooth; × volume after a linear ramp
+  (full scale in 2 ms); first-order delta-sigma modulator on AUD_PWM into the board's
+  4th-order low-pass filter (about 17 kHz); AUD_SD on while there is sound.
+
+`sim/tb_periph.v` (`sim/run_periph.ps1`) tests them alone: UART at 1 MBd with all byte
+values and an overrun, SPI loopback in every mode, width and bit order at 12.5 MHz, I2C
+against a 24Cxx-style slave model that stretches SCL, the DDS frequency and the tone
+modulator; `sim/periph.txt` runs them from Forth in the system testbench.
 
 ### PWM
 
@@ -242,6 +284,7 @@ read the same values; only the loader and the PC field are wider.
 | 0x2C | XADC: write selects a status register 0..31; read returns bits 20..16 = the selection, bits 15..0 = its value (the scanner's second read port) |
 | 0x30 | PG_STATUS: bits 27..16 = the pattern generator's current step, bits 6..0 = its status (as at 0x100180) |
 | 0x34 | PG_OUT: bits 31..16 = channel enable mask, bits 15..0 = current output levels |
+| 0x38 | FUNC: write selects a pin-function entry 0..13; read returns bits 19..16 = the selection, bit 15 = on, bits 5..0 = the pin (see *Pin router*) |
 
 Registers 0x18 to 0x34 let the ARM show the board's state in the app while Forth runs; they
 only read, so they never disturb the CPU.

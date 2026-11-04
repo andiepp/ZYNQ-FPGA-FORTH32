@@ -39,6 +39,7 @@ module forth_system #(
     inout  wire [13:0] ck_io,      // IO0..IO13         = pins 0..13
     inout  wire [5:0]  ck_a,       // A0..A5 as digital = pins 14..19
     inout  wire [15:0] ck_ioh,     // IO26..IO41        = pins 26..41
+    inout  wire [5:0]  ck_x,       // SCL, SDA, SPI header MISO, MOSI, SCK, SS = pins 42..47
     input  wire [5:0]  an_p,       // A0..A5 analog (through the 2.32k/1k divider)
     input  wire [5:0]  an_n,
     input  wire [2:0]  ad_p,       // A6/A7, A8/A9, A10/A11 differential, 0..1 V
@@ -46,7 +47,10 @@ module forth_system #(
 
     // pattern generator: its 200 MHz clock and the Pmod pins (JA1..4,7..10, JB1..4,7..10)
     input  wire        pg_clk,
-    output wire [15:0] pmod
+    output wire [15:0] pmod,
+
+    // audio jack: {AUD_SD (amplifier on), AUD_PWM (into the board's low-pass filter)}
+    output wire [1:0]  aud
 );
 
     wire clk = s_axi_aclk;
@@ -124,11 +128,16 @@ module forth_system #(
     reg        rx_push = 1'b0, tx_pop = 1'b0;
     reg  [7:0] rx_din  = 8'd0;
 
-    // I/O register k sits at $100000 + 4k; only address bits 8..2 are decoded
+    // I/O register k sits at $100000 + 4k; only address bits 9..2 are decoded. Registers
+    // 0..127 are the board I/O of the 16-bit design, 128.. the serial interfaces, the DDS
+    // and the tone generator ($100200..).
     wire       io_store = mem_we && io_addr;
-    wire [6:0] io_k     = mem_addr[8:2];
+    wire [7:0] io_k8    = mem_addr[9:2];
+    wire [6:0] io_k     = io_k8[6:0];
+    wire       io_lo    = !io_k8[7];
+    wire       io_hi    = io_k8[7];
     wire       rx_pop   = mem_rd && cpu_t == 32'h0010_0000;
-    wire       tx_push  = io_store && io_k == 7'd0;
+    wire       tx_push  = io_store && io_k8 == 8'd0;
 
     fifo #(.WIDTH(8), .DEPTH_LOG2(5)) rx_fifo (
         .clk(clk), .rst(cpu_rst), .push(rx_push), .din(rx_din),
@@ -182,9 +191,10 @@ module forth_system #(
 
     // ------------------------------------------------------------------
     // Shield pins: three 16-bit ports, pin n = bit n%16 of port n/16.
-    // Pins 20..25 and 42..47 do not exist. All pins are inputs after reset.
+    // Pins 20..25 do not exist; 42..47 are the shield's SCL and SDA and the SPI header's
+    // MISO, MOSI, SCK and SS. All pins are inputs after reset.
     // ------------------------------------------------------------------
-    localparam [47:0] PIN_EXISTS = 48'h03FF_FC0F_FFFF;
+    localparam [47:0] PIN_EXISTS = 48'hFFFF_FC0F_FFFF;
 
     reg  [47:0] pin_out = 48'd0, pin_dir = 48'd0;   // pin_dir: 1 = output
     reg  [47:0] pin_meta = 48'd0, pin_sync = 48'd0;
@@ -198,7 +208,7 @@ module forth_system #(
     wire [15:0]         pwm_rdata;
     wire [PWM_CH-1:0]   pwm_en, pwm_level;
     wire [6*PWM_CH-1:0] pwm_pin;
-    wire                io_pwm = io_k[6:4] == 3'b100;      // $100100..$10013F
+    wire                io_pwm = io_lo && io_k[6:4] == 3'b100;   // $100100..$10013F
 
     pwm #(.CHANNELS(PWM_CH)) pwm_unit (
         .clk(clk), .rst(cpu_rst), .we(io_store && io_pwm),
@@ -206,21 +216,102 @@ module forth_system #(
         .rdata(pwm_rdata), .enable(pwm_en), .pin(pwm_pin), .out(pwm_level)
     );
 
-    reg [47:0] pwm_owns, pwm_value;                     // per pin
+    // ------------------------------------------------------------------
+    // Serial interfaces, DDS and tone generator ($100200..), and the pin router: every
+    // output of a peripheral names its pin; an enabled one owns that pin (push-pull, or
+    // for I2C open drain: driven low or left to the pull-up). Owners of the same pin are
+    // ORed; the Forth words refuse a pin that is taken.
+    // ------------------------------------------------------------------
+    wire [31:0] u0_rdata, u1_rdata, s0_rdata, s1_rdata, i2c_rdata, dds_rdata, tone_rdata;
+    wire        u0_tx, u1_tx, u0_en, u1_en;
+    wire [5:0]  u0_txp, u0_rxp, u1_txp, u1_rxp;
+    wire        s0_sck, s0_mosi, s0_en, s1_sck, s1_mosi, s1_en;
+    wire [5:0]  s0_sckp, s0_mosip, s0_misop, s1_sckp, s1_mosip, s1_misop;
+    wire        i2c_scl_low, i2c_sda_low, i2c_en;
+    wire [5:0]  i2c_sclp, i2c_sdap;
+    wire        dds_out, dds_en;
+    wire [5:0]  dds_pinp;
+
+    wire sel_u0   = io_hi && io_k[6:2] == 5'd0;      // $100200
+    wire sel_u1   = io_hi && io_k[6:2] == 5'd1;      // $100210
+    wire sel_s0   = io_hi && io_k[6:3] == 4'd1;      // $100220
+    wire sel_s1   = io_hi && io_k[6:3] == 4'd2;      // $100240
+    wire sel_i2c  = io_hi && io_k[6:2] == 5'd6;      // $100260
+    wire sel_dds  = io_hi && io_k[6:1] == 6'd16;     // $100280
+    wire sel_tone = io_hi && io_k[6:2] == 5'd10;     // $1002A0
+
+    uart u0 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_u0), .rd(mem_rd && cpu_t == 32'h0010_0200),
+        .reg_sel(io_k[1:0]), .wdata(mem_wdata), .rdata(u0_rdata), .rx_in(pin_sync[u0_rxp]),
+        .tx_out(u0_tx), .enable(u0_en), .tx_pin(u0_txp), .rx_pin(u0_rxp)
+    );
+    uart u1 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_u1), .rd(mem_rd && cpu_t == 32'h0010_0210),
+        .reg_sel(io_k[1:0]), .wdata(mem_wdata), .rdata(u1_rdata), .rx_in(pin_sync[u1_rxp]),
+        .tx_out(u1_tx), .enable(u1_en), .tx_pin(u1_txp), .rx_pin(u1_rxp)
+    );
+    spi s0 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_s0), .reg_sel(io_k[2:0]),
+        .wdata(mem_wdata), .rdata(s0_rdata), .miso_in(pin_sync[s0_misop]),
+        .sck_out(s0_sck), .mosi_out(s0_mosi), .enable(s0_en),
+        .sck_pin(s0_sckp), .mosi_pin(s0_mosip), .miso_pin(s0_misop)
+    );
+    spi s1 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_s1), .reg_sel(io_k[2:0]),
+        .wdata(mem_wdata), .rdata(s1_rdata), .miso_in(pin_sync[s1_misop]),
+        .sck_out(s1_sck), .mosi_out(s1_mosi), .enable(s1_en),
+        .sck_pin(s1_sckp), .mosi_pin(s1_mosip), .miso_pin(s1_misop)
+    );
+    i2c i2c0 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_i2c), .reg_sel(io_k[1:0]),
+        .wdata(mem_wdata), .rdata(i2c_rdata),
+        .scl_in(pin_sync[i2c_sclp]), .sda_in(pin_sync[i2c_sdap]),
+        .scl_low(i2c_scl_low), .sda_low(i2c_sda_low), .enable(i2c_en),
+        .scl_pin(i2c_sclp), .sda_pin(i2c_sdap)
+    );
+    dds dds0 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_dds), .reg_sel(io_k[0]),
+        .wdata(mem_wdata), .rdata(dds_rdata), .dds_clk(pg_clk),
+        .out(dds_out), .enable(dds_en), .pin(dds_pinp)
+    );
+    tone tone0 (
+        .clk(clk), .rst(cpu_rst), .we(io_store && sel_tone), .reg_sel(io_k[1:0]),
+        .wdata(mem_wdata), .rdata(tone_rdata), .aud_pwm(aud[0]), .aud_sd(aud[1])
+    );
+
+    // push-pull outputs: PWM 0..3, UART TX 0/1, SPI SCK and MOSI 0/1, DDS
+    localparam integer PP = PWM_CH + 7;
+    wire [PP-1:0]   pp_en  = {dds_en, s1_en, s1_en, s0_en, s0_en, u1_en, u0_en, pwm_en};
+    wire [PP-1:0]   pp_val = {dds_out, s1_mosi, s1_sck, s0_mosi, s0_sck, u1_tx, u0_tx, pwm_level};
+    wire [6*PP-1:0] pp_pin = {dds_pinp, s1_mosip, s1_sckp, s0_mosip, s0_sckp, u1_txp, u0_txp, pwm_pin};
+
+    reg [47:0] pp_owns, pp_value, od_owns, od_low;      // per pin
     integer    p, q;
     always @* begin
-        pwm_owns  = 48'd0;
-        pwm_value = 48'd0;
-        for (p = 0; p < 48; p = p + 1)
-            for (q = 0; q < PWM_CH; q = q + 1)
-                if (pwm_en[q] && pwm_pin[6*q +: 6] == p) begin
-                    pwm_owns[p]  = 1'b1;
-                    pwm_value[p] = pwm_value[p] | pwm_level[q];
+        pp_owns  = 48'd0;
+        pp_value = 48'd0;
+        od_owns  = 48'd0;
+        od_low   = 48'd0;
+        for (p = 0; p < 48; p = p + 1) begin
+            for (q = 0; q < PP; q = q + 1)
+                if (pp_en[q] && pp_pin[6*q +: 6] == p) begin
+                    pp_owns[p]  = 1'b1;
+                    pp_value[p] = pp_value[p] | pp_val[q];
                 end
+            if (i2c_en && i2c_sclp == p) begin
+                od_owns[p] = 1'b1;
+                od_low[p]  = od_low[p] | i2c_scl_low;
+            end
+            if (i2c_en && i2c_sdap == p) begin
+                od_owns[p] = 1'b1;
+                od_low[p]  = od_low[p] | i2c_sda_low;
+            end
+        end
     end
 
-    wire [47:0] pin_drive = (pin_dir | pwm_owns) & pin_exists;
-    wire [47:0] pin_level = (pin_out & ~pwm_owns) | (pwm_value & pwm_owns);
+    wire [47:0] owned     = pp_owns | od_owns;
+    wire [47:0] pin_drive = ((pin_dir & ~owned) | pp_owns | od_low) & pin_exists;
+    wire [47:0] pin_level = (pin_out & ~owned) | (pp_value & pp_owns);
 
     genvar g;
     generate
@@ -233,10 +324,13 @@ module forth_system #(
         for (g = 0; g < 16; g = g + 1) begin : g_ioh
             assign ck_ioh[g] = pin_drive[26 + g] ? pin_level[26 + g] : 1'bz;
         end
+        for (g = 0; g < 6; g = g + 1) begin : g_x
+            assign ck_x[g] = pin_drive[42 + g] ? pin_level[42 + g] : 1'bz;
+        end
     endgenerate
 
     always @(posedge clk) begin
-        pin_meta <= {6'd0, ck_ioh, 6'd0, ck_a, ck_io};
+        pin_meta <= {ck_x, ck_ioh, 6'd0, ck_a, ck_io};
         pin_sync <= pin_meta;
     end
 
@@ -249,6 +343,7 @@ module forth_system #(
                          1'b0, an_n[2], an_n[4], 3'b000, an_n[0], ad_n[1]};
     wire [15:0] xadc_rdata, xadc_rdata2;
     reg  [4:0]  xadc_sel = 5'd0;                        // ARM's XADC register select
+    reg  [3:0]  func_sel = 4'd0;                        // ARM's pin function select
 
     xadc_scan xadc (
         .clk(clk), .vauxp(vauxp), .vauxn(vauxn),
@@ -259,14 +354,14 @@ module forth_system #(
     // ------------------------------------------------------------------
     // Pattern generator at $100180..$1001BF (rtl/patgen.v)
     // ------------------------------------------------------------------
-    wire        io_pg = io_k[6:4] == 3'b110;
+    wire        io_pg = io_lo && io_k[6:4] == 3'b110;
     wire [15:0] pg_rdata;
     wire [31:0] pg_status, pg_out;
 
     patgen pg (
         .clk(clk), .rst(cpu_rst), .we(io_store && io_pg), .reg_sel(io_k[3:0]),
         .wdata(mem_wdata[15:0]), .rdata(pg_rdata), .arm_status(pg_status), .arm_out(pg_out),
-        .pg_clk(pg_clk), .trig_pins({6'd0, ck_ioh, 6'd0, ck_a, ck_io}), .trig_btn(btn),
+        .pg_clk(pg_clk), .trig_pins({ck_x, ck_ioh, 6'd0, ck_a, ck_io}), .trig_btn(btn),
         .pins(pmod)
     );
 
@@ -278,11 +373,12 @@ module forth_system #(
     //   k 32..63   $100080..$1000FC  XADC status registers 0..31
     //   k 64 + 4c  $100100 + 16c     PWM channel c: +0/+4 period, +8 duty, +12 control
     //   k 96..106  $100180..$1001A8  pattern generator (rtl/patgen.v)
+    //   k 128..    $100200..         UARTs, SPI masters, I2C, DDS, tone (above)
     // ------------------------------------------------------------------
     reg [31:0] io_rdata = 32'd0;
     reg        io_sel   = 1'b0;
 
-    wire       io_gpio = io_k[6:5] == 2'b00 && io_k[4:2] >= 3'd2 && io_k[4:2] <= 3'd4;
+    wire       io_gpio = io_lo && io_k[6:5] == 2'b00 && io_k[4:2] >= 3'd2 && io_k[4:2] <= 3'd4;
     wire [2:0] io_port = io_k[4:2] - 3'd2;
     wire [6:0] io_bit0 = {io_port, 4'd0};                 // first pin of the port
 
@@ -293,7 +389,7 @@ module forth_system #(
             pin_out <= 48'd0;
             pin_dir <= 48'd0;
         end else if (io_store) begin
-            if (io_k[6:3] == 4'd0)
+            if (io_lo && io_k[6:3] == 4'd0)
                 case (io_k[2:0])
                     3'd2: led <= mem_wdata[3:0];
                     3'd4: rgb <= mem_wdata[5:0];
@@ -308,7 +404,23 @@ module forth_system #(
         end
 
         io_sel <= io_addr;
-        if (io_k[6:5] == 2'b01)
+        if (sel_u0)
+            io_rdata <= u0_rdata;
+        else if (sel_u1)
+            io_rdata <= u1_rdata;
+        else if (sel_s0)
+            io_rdata <= s0_rdata;
+        else if (sel_s1)
+            io_rdata <= s1_rdata;
+        else if (sel_i2c)
+            io_rdata <= i2c_rdata;
+        else if (sel_dds)
+            io_rdata <= dds_rdata;
+        else if (sel_tone)
+            io_rdata <= tone_rdata;
+        else if (io_hi)
+            io_rdata <= 32'd0;
+        else if (io_k[6:5] == 2'b01)
             io_rdata <= {16'd0, xadc_rdata};
         else if (io_pwm)
             io_rdata <= {16'd0, pwm_rdata};
@@ -338,6 +450,31 @@ module forth_system #(
 
     assign mem_rdata = io_sel ? io_rdata : ram_doutb;
 
+    // the pin functions for the ARM's board view: bit 15 enabled, bits 5..0 pin (63: the
+    // audio jack); 0 UART0 TX, 1 UART0 RX, 2 UART1 TX, 3 UART1 RX, 4 SPI0 SCK, 5 SPI0 MOSI,
+    // 6 SPI0 MISO, 7 SPI1 SCK, 8 SPI1 MOSI, 9 SPI1 MISO, 10 I2C SCL, 11 I2C SDA, 12 DDS,
+    // 13 tone
+    reg [15:0] func_word;
+    always @* begin
+        case (func_sel)
+            4'd0:  func_word = {u0_en, 9'd0, u0_txp};
+            4'd1:  func_word = {u0_en, 9'd0, u0_rxp};
+            4'd2:  func_word = {u1_en, 9'd0, u1_txp};
+            4'd3:  func_word = {u1_en, 9'd0, u1_rxp};
+            4'd4:  func_word = {s0_en, 9'd0, s0_sckp};
+            4'd5:  func_word = {s0_en, 9'd0, s0_mosip};
+            4'd6:  func_word = {s0_en, 9'd0, s0_misop};
+            4'd7:  func_word = {s1_en, 9'd0, s1_sckp};
+            4'd8:  func_word = {s1_en, 9'd0, s1_mosip};
+            4'd9:  func_word = {s1_en, 9'd0, s1_misop};
+            4'd10: func_word = {i2c_en, 9'd0, i2c_sclp};
+            4'd11: func_word = {i2c_en, 9'd0, i2c_sdap};
+            4'd12: func_word = {dds_en, 9'd0, dds_pinp};
+            4'd13: func_word = {aud[1], 9'd0, 6'd63};
+            default: func_word = 16'd0;
+        endcase
+    end
+
     // ------------------------------------------------------------------
     // AXI-Lite slave (single outstanding transaction per direction)
     // ------------------------------------------------------------------
@@ -359,6 +496,7 @@ module forth_system #(
             rx_push       <= 1'b0;
             tx_pop        <= 1'b0;
             xadc_sel      <= 5'd0;
+            func_sel      <= 4'd0;
         end else begin
             s_axi_awready <= 1'b0;
             s_axi_wready  <= 1'b0;
@@ -391,6 +529,7 @@ module forth_system #(
                         rx_push <= 1'b1;
                     end
                     4'd11: xadc_sel <= s_axi_wdata[4:0];
+                    4'd14: func_sel <= s_axi_wdata[3:0];
                     default: ;
                 endcase
             end
@@ -418,6 +557,7 @@ module forth_system #(
                     4'd11: s_axi_rdata <= {11'd0, xadc_sel, xadc_rdata2};
                     4'd12: s_axi_rdata <= pg_status;
                     4'd13: s_axi_rdata <= pg_out;
+                    4'd14: s_axi_rdata <= {12'd0, func_sel, func_word};
                     default: s_axi_rdata <= 32'd0;
                 endcase
             end

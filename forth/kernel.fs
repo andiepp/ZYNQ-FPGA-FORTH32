@@ -155,15 +155,18 @@ create tib 84 allot
 
 \ ---------------------------------------------------------------------------
 \ Shield digital pins. Pin numbers are the shield labels: 0..13 = IO0..IO13,
-\ 14..19 = A0..A5 used as digital pins, 26..41 = IO26..IO41. Pin n is bit n%16
-\ of port n/16 at $100020+16*(n/16): +0 pin levels, +4 output latch, +8
+\ 14..19 = A0..A5 used as digital pins, 26..41 = IO26..IO41, 42..47 = the
+\ shield's SCL and SDA and the SPI header's MISO, MOSI, SCK and SS. Pin n is bit
+\ n%16 of port n/16 at $100020+16*(n/16): +0 pin levels, +4 output latch, +8
 \ direction (1 = output). Every pin is an input after reset.
 \ ---------------------------------------------------------------------------
 
+42 constant pin-scl   43 constant pin-sda   44 constant pin-miso
+45 constant pin-mosi  46 constant pin-sck   47 constant pin-ss
 : bset ( mask a -- ) dup @ rot or swap ! ;
 : bclr ( mask a -- ) dup @ rot invert and swap ! ;
 : pin ( n -- mask a )
-  dup 0 20 within over 26 42 within or 0= if ."  bad pin" cr abort then
+  dup 0 20 within over 26 48 within or 0= if ."  bad pin" cr abort then
   dup 15 and 1 swap lshift swap 4 rshift 4 lshift $100020 + ;
 : output ( n -- ) pin 8 + bset ;
 : input ( n -- ) pin 8 + bclr ;
@@ -172,6 +175,18 @@ create tib 84 allot
 : toggle ( n -- ) pin 4 + dup @ rot xor swap ! ;
 : pin@ ( n -- f ) pin @ and 0<> ;
 : pin! ( f n -- ) swap if high else low then ;
+
+\ A pin given to a peripheral belongs to it until the peripheral lets it go: its
+\ latch and direction no longer count. Owners: 1..4 PWM 0..3, 5 UART 0, 6 UART 1,
+\ 7 SPI 0, 8 SPI 1, 9 I2C, 10 DDS.
+create pin-owner 48 allot
+: owner ( pin -- id ) dup pin 2drop pin-owner + c@ ;
+\ (free) refuses a pin another owner has; the open words check every pin first,
+\ so a refused one leaves nothing half claimed
+: (free) ( pin id -- pin ) over owner ?dup if <> if ."  pin taken" cr abort then else drop then ;
+: claim ( pin id -- ) 2dup (free) drop swap pin-owner + c! ;
+: (claim) ( pin id -- pin ) over swap claim ;
+: release ( id -- ) 48 0 do i pin-owner + c@ over = if 0 i pin-owner + c! then loop drop ;
 
 \ ---------------------------------------------------------------------------
 \ Durations and periods are double cells ( lo hi ) meaning lo + hi*65536, so
@@ -198,8 +213,96 @@ create tib 84 allot
   over 1 25001 within 0= if ."  bad frequency" cr abort then
   >r 50000 swap u/mod nip 0 r> pwm-clocks ;
 : pwm-duty ( permille ch -- ) >r 0 max 1000 min 65535 * 1000 / r> pwm 8 + ! ;
-: pwm-pin ( pin ch -- ) >r dup pin 2drop $8000 or r> pwm 12 + ! ;
-: pwm-off ( ch -- ) pwm 12 + 0 swap ! ;
+: pwm-pin ( pin ch -- )
+  dup pwm drop dup 1+ release >r r@ 1+ (claim) $8000 or r> pwm 12 + ! ;
+: pwm-off ( ch -- ) dup pwm 12 + 0 swap ! 1+ release ;
+
+\ ---------------------------------------------------------------------------
+\ Serial interfaces at $100200 (rtl/uart.v, spi.v, i2c.v): every signal on any
+\ pin. UART u = 0, 1 at $100200 + 16u: 8N1, 64-byte FIFOs. SPI s = 0, 1 at
+\ $100220 + 32s: master, modes 0..3, 8/16/32 bits, up to 12.5 MHz; chip selects
+\ are ordinary pins. I2C at $100260: master, open drain, clock stretching.
+\ ---------------------------------------------------------------------------
+
+: uart ( u -- a ) dup 2 u< 0= if ."  bad uart" cr abort then 4 lshift $100200 + ;
+: uart-open ( baud tx rx u -- )
+  dup uart drop dup >r 5 + release
+  r@ 5 + (free) swap r@ 5 + (free) swap
+  r@ 5 + (claim) 8 lshift swap r@ 5 + (claim) or $8000 or
+  swap dup 0= if ."  bad baud" cr abort then 50000000 swap u/mod nip
+  r@ uart 8 + ! r> uart 12 + ! ;
+: uart-close ( u -- ) dup uart 12 + 0 swap ! 5 + release ;
+: uart-emit ( c u -- ) uart begin dup 4 + @ 2 and until ! ;
+: uart-key? ( u -- f ) uart 4 + @ 1 and 0<> ;
+: uart-key ( u -- c ) uart begin dup 4 + @ 1 and until @ $FF and ;
+: uart-type ( a n u -- ) >r begin dup while over c@ r@ uart-emit 1 /string repeat 2drop r> drop ;
+\ bit 2 transmitter idle, bit 3 a received byte was lost, bit 4 framing error;
+\ reading clears bits 3 and 4
+: uart-status ( u -- bits ) uart 4 + dup @ $1C and 0 rot ! ;
+
+: spi ( s -- a ) dup 2 u< 0= if ."  bad spi" cr abort then 5 lshift $100220 + ;
+variable cid
+: spi-open ( sck mosi miso s -- )
+  dup spi drop dup >r 7 + dup cid ! release
+  cid @ (free) >r cid @ (free) >r cid @ (free) r> r>
+  cid @ (claim) 16 lshift swap cid @ (claim) 8 lshift or swap cid @ (claim) or
+  $80000000 or r> spi 16 + ! ;
+: spi-close ( s -- ) dup spi 16 + 0 swap ! 7 + release ;
+: spi-hz ( hz s -- )
+  >r dup 0= if ."  bad frequency" cr abort then
+  25000000 swap u/mod swap if 1+ then 2 max r> spi 12 + ! ;
+: spi-mode ( mode s -- ) spi 8 + dup @ 3 invert and rot 3 and or swap ! ;
+: spi-lsb ( f s -- ) spi 8 + dup @ 4 invert and rot if 4 or then swap ! ;
+: spi-bits ( n s -- )
+  >r dup 8 = if drop 0 else 16 = if $10 else $20 then then
+  r> spi 8 + dup @ $30 invert and rot or swap ! ;
+: spi-xfer ( out s -- in ) spi tuck ! begin dup 4 + @ 1 and 0= until @ ;
+: spi-write ( a n s -- ) >r begin dup while over c@ r@ spi-xfer drop 1 /string repeat 2drop r> drop ;
+: spi-read ( a n s -- )
+  >r begin dup while 0 r@ spi-xfer >r over r> swap c! 1 /string repeat 2drop r> drop ;
+
+: (i2c) ( cmd -- status )
+  $100260 ! begin $100260 @ dup 0< while drop repeat
+  dup $200 and if ."  i2c timeout" cr abort then ;
+: i2c-open-pins ( hz scl sda -- )
+  9 release 9 (free) swap 9 (free) swap
+  9 (claim) 8 lshift swap 9 (claim) or $8000 or >r
+  dup 0= if ."  bad frequency" cr abort then
+  12500000 swap u/mod swap if 1+ then 2 + $100264 ! r> $100268 ! ;
+: i2c-open ( hz -- ) pin-scl pin-sda i2c-open-pins ;
+: i2c-close ( -- ) 0 $100268 ! 9 release ;
+: i2c-start ( -- ) $100 (i2c) drop ;
+: i2c-stop ( -- ) $200 (i2c) drop ;
+: i2c-write ( b -- ack? ) $FF and $300 or (i2c) $100 and 0<> ;
+: i2c-read ( ack? -- b ) if $400 else $500 then (i2c) $FF and ;
+\ start (or a repeated start), then the address byte: 7-bit address, rw 1 = read
+: i2c-addr ( addr rw -- ack? ) i2c-start swap 2* or i2c-write ;
+: (ack?) ( f -- ) 0= if i2c-stop ."  no ack" cr abort then ;
+: i2c! ( b reg addr -- ) 0 i2c-addr (ack?) i2c-write (ack?) i2c-write (ack?) i2c-stop ;
+: i2c@ ( reg addr -- b )
+  dup >r 0 i2c-addr (ack?) i2c-write (ack?) r> 1 i2c-addr (ack?) 0 i2c-read i2c-stop ;
+: i2c-probe ( addr -- f ) 0 i2c-addr i2c-stop ;
+: i2c-scan ( -- )
+  base @ >r hex 120 8 do i i2c-probe if i . then loop r> base ! cr ;
+
+\ ---------------------------------------------------------------------------
+\ DDS at $100280 (rtl/dds.v): a square wave on any pin from a 32-bit phase
+\ accumulator at 200 MHz, f in steps of 0.047 Hz, edges on the 5 ns grid.
+\ Tone generator at $1002A0 (rtl/tone.v): sine, square, triangle or sawtooth on
+\ the board's audio jack, steps of 0.012 Hz, volume ramps without clicks.
+\ ---------------------------------------------------------------------------
+
+: dds-sync ( -- ) begin $100284 @ 0< 0= until ;
+: dds-hz ( F: hz -- ) 21.47483648e f* fround f>u $100280 ! dds-sync ;
+: dds-pin ( pin -- ) 10 release 10 (claim) 8 lshift 1 or $100284 ! dds-sync ;
+: dds-off ( -- ) 0 $100284 ! 10 release dds-sync ;
+
+0 constant sine   1 constant square   2 constant triangle   3 constant sawtooth
+: tone ( F: hz -- ) 85.89934592e f* fround f>u $1002A0 ! $1002A4 @ 1 or $1002A4 ! ;
+: tone-off ( -- ) $1002A4 @ -2 and $1002A4 ! ;
+: wave ( n -- ) 3 and 2* $1002A4 @ 1 and or $1002A4 ! ;
+: volume ( percent -- ) 0 max 100 min 65535 * 100 / $1002A8 ! ;
+: beep ( ms -- ) ( F: hz -- ) tone ms tone-off ;
 
 \ ---------------------------------------------------------------------------
 \ Pattern generator: 16 channels, 0..7 on Pmod JA and 8..15 on JB, played in

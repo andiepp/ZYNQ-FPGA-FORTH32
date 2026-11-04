@@ -668,9 +668,10 @@ class Compiler:
 # Instruction-set simulator (mirrors rtl/hf32_cpu.v)
 # ---------------------------------------------------------------------------
 
-# Shield pins 0..19 and 26..41; IO pins have pull-ups, A0..A5 (14..19) read low
-PIN_EXISTS = 0x03FF_FC0F_FFFF
-PIN_IDLE = 0x03FF_FC00_3FFF
+# Shield pins 0..19, 26..41 and 42..47 (SCL, SDA, the SPI header); IO pins have pull-ups,
+# A0..A5 (14..19) read low
+PIN_EXISTS = 0xFFFF_FC0F_FFFF
+PIN_IDLE = 0xFFFF_FC00_3FFF
 
 # Simulated XADC results (12-bit codes by status register), the same values as
 # sim/xadc_stim.txt: 45 C, VCCINT 1.0 V, VCCAUX 1.8 V, VCCBRAM 1.0 V, VCCPINT 1.0 V,
@@ -707,6 +708,14 @@ class Machine:
             self.xadc[reg] = value << 4
         # PWM channel c: [period low as written, period (32 bits), duty, control]
         self.pwm = [[0, 0, 0, 0] for _ in range(4)]
+        # The serial interfaces, simply: UART 0 and 1 wired TX to RX both ways (no timing),
+        # SPI as a MOSI-MISO loopback, an I2C bus without devices, DDS and tone registers
+        self.uart_rx = [bytearray(), bytearray()]
+        self.uart_regs = [[0, 0, 434, 0], [0, 0, 434, 0]]
+        self.spi_regs = [[0, 0, 0, 25, 0, 0, 0, 0] for _ in range(2)]
+        self.i2c_regs = [0, 125, 0, 0]
+        self.dds_regs = [0, 0]
+        self.tone_regs = [0, 0, 32768, 0]
 
     def pwm_pins(self):
         """Pins owned by an enabled PWM channel, and their level: the ISS has no time
@@ -730,7 +739,8 @@ class Machine:
 
     def rd32(self, a):
         if a & IO_BASE:
-            return self.io_read((a >> 2) & 0x7F)
+            k = (a >> 2) & 0xFF
+            return self.io_read(k) if k < 128 else self.io_read_hi(k - 128)
         a &= RAM_BYTES - 4
         return int.from_bytes(self.mem[a:a + 4], 'little')
 
@@ -767,8 +777,52 @@ class Machine:
             return (self.steps // 50) & M32          # nominal: 50 instructions per us
         return 0
 
+    def io_read_hi(self, k):
+        if k < 8:                                        # UART 0, 1
+            u, r = k >> 2, k & 3
+            if r == 0:
+                rx = self.uart_rx[u]
+                return (0x100 | rx.pop(0)) if rx else 0
+            if r == 1:
+                return (1 if self.uart_rx[u] else 0) | 2 | 4
+            return self.uart_regs[u][r]
+        if 8 <= k < 24:                                  # SPI 0, 1
+            regs, r = self.spi_regs[(k - 8) >> 3], k & 7
+            return 0 if r == 1 else regs[r]
+        if 24 <= k < 28:                                 # I2C: never busy, no ACK
+            return self.i2c_regs[k - 24] if k > 24 else 0
+        if 32 <= k < 34:
+            return self.dds_regs[k - 32]
+        if 40 <= k < 44:
+            return self.tone_regs[k - 40]
+        return 0
+
+    def store_hi(self, k, v):
+        if k < 8:
+            u, r = k >> 2, k & 3
+            if r == 0:
+                if self.uart_regs[u][3] & 0x8000 and self.uart_regs[1 - u][3] & 0x8000:
+                    self.uart_rx[1 - u].append(v & 0xFF)
+            elif r > 1:
+                self.uart_regs[u][r] = v & M32
+        elif 8 <= k < 24:
+            regs, r = self.spi_regs[(k - 8) >> 3], k & 7
+            if r == 0:
+                width = (regs[2] >> 4) & 3
+                regs[0] = v & (0xFF if width == 0 else 0xFFFF if width == 1 else M32)
+            else:
+                regs[r] = v & M32
+        elif 24 <= k < 28:
+            self.i2c_regs[k - 24] = v & M32
+        elif 32 <= k < 34:
+            self.dds_regs[k - 32] = v & M32
+        elif 40 <= k < 44:
+            self.tone_regs[k - 40] = v & M32
+
     def store(self, a, v, byte):
         if a & IO_BASE:
+            if (a >> 2) & 0x80:
+                return self.store_hi(((a >> 2) & 0xFF) - 128, v)
             k = (a >> 2) & 0x7F
             if k >> 4 == 4:
                 ch, sel, v = self.pwm[(k >> 2) & 3], k & 3, v & 0xFFFF

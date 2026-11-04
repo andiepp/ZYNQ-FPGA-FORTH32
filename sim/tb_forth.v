@@ -26,6 +26,8 @@ module tb;
     tri1 [13:0] ck_io;                 // shield IO pins have pull-ups in pins.xdc
     tri1 [15:0] ck_ioh;
     tri0 [5:0]  ck_a;                  // A0..A5 sit on a divider to ground
+    tri1 [5:0]  ck_x;                  // SCL/SDA and the SPI header: pull-ups
+    wire [1:0]  aud;
 
     // ms timer every 100 clocks keeps MS loops short in simulation
     forth_system #(.CLK_HZ(100_000)) dut (
@@ -38,7 +40,7 @@ module tb;
         .s_axi_arready(arready), .s_axi_rdata(rdata), .s_axi_rresp(rresp),
         .s_axi_rvalid(rvalid), .s_axi_rready(rready),
         .led(led), .rgb(rgb), .btn(4'b0000), .sw(2'b00),
-        .ck_io(ck_io), .ck_a(ck_a), .ck_ioh(ck_ioh),
+        .ck_io(ck_io), .ck_a(ck_a), .ck_ioh(ck_ioh), .ck_x(ck_x), .aud(aud),
         .an_p(6'd0), .an_n(6'd0), .ad_p(3'd0), .ad_n(3'd0), // analog values: xadc_stim.txt
         .pg_clk(pg_clk), .pmod(pmod)
     );
@@ -98,6 +100,19 @@ module tb;
             pauses = pauses + 1;
         end
     endtask
+
+    // Loopback wires for sim/periph.txt: IO26 -> IO29 and IO28 -> IO27 (UART 0 and 1
+    // crossed), the SPI header's MOSI -> MISO
+    // (one-way: the input pin follows the output pin, which reads 1 when undriven)
+    assign ck_ioh[3] = ck_ioh[0];
+    assign ck_ioh[1] = ck_ioh[2];
+    assign ck_x[2]   = ck_x[3];
+
+    // DDS monitor: rising edges on IO30 while the DDS is on; tone monitor: amplifier on,
+    // the modulator's ones
+    integer dds_rises = 0, aud_on = 0, aud_ones = 0;
+    always @(posedge ck_ioh[4]) if (dut.dds_en) dds_rises = dds_rises + 1;
+    always @(posedge clk) if (aud[1]) begin aud_on = aud_on + 1; if (aud[0]) aud_ones = aud_ones + 1; end
 
     // PWM monitor: while channel 0 is enabled, count its clocks, the high ones on pin
     // IO3 and the rising edges (sim/pwm.txt routes channel 0 to pin 3)
@@ -222,6 +237,10 @@ module tb;
         if (pwm_clocks)
             $display("[tb] pwm 0 on IO3: %0d clocks, %0d high, %0d rising edges; pulses %0d..%0d, periods %0d..%0d clocks",
                      pwm_clocks, pwm_high, pwm_rises, pwm_wmin, pwm_wmax, pwm_pmin, pwm_pmax);
+        if (dds_rises)
+            $display("[tb] dds on IO30: %0d rising edges", dds_rises);
+        if (aud_on)
+            $display("[tb] audio: amplifier on for %0d clocks, modulator ones %0d", aud_on, aud_ones);
         if (pg_ticks)
             $display("[tb] pattern generator, channel 0: %0d ticks, %0d rising edges; pulses %0d..%0d, periods %0d..%0d ticks",
                      pg_ticks, pg_rises, pg_wmin, pg_wmax, pg_pmin, pg_pmax);

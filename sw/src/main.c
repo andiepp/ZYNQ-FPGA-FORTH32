@@ -46,9 +46,9 @@
 #include "mcnf_node.h"
 
 #define FIRMWARE_NAME       "zynq-forth32"
-#define FIRMWARE_VERSION    "3.0"
+#define FIRMWARE_VERSION    "3.1"
 #define FIRMWARE_MAJOR      3               /* as the HASE node reports it (function 0x15) */
-#define FIRMWARE_MINOR      0
+#define FIRMWARE_MINOR      1
 #define PROTOCOL_VERSION    2               /* 2: 32-bit cells and the float stack */
 
 #define UART                STDIN_BASEADDRESS   /* PS UART0, 115200 8N1 from the BSP */
@@ -66,6 +66,8 @@
 #define REG_XADC            0x2C
 #define REG_PG_STATUS       0x30            /* pattern generator: step, status */
 #define REG_PG_OUT          0x34            /* its enable mask and current levels */
+#define REG_FUNC            0x38            /* pin functions: write selects, read gives one */
+#define FUNC_COUNT          14              /* UART, SPI, I2C, DDS signals and the tone */
 
 #define CTRL_HOLD           0x1
 #define CTRL_PAUSE          0x2
@@ -106,6 +108,7 @@
 #define FN_FLOAT_STACK      0x46            /* the float stack (IEEE single bits) */
 #define FN_DICT_SNAPSHOT32  0x47            /* as 0x40 with 32-bit addresses */
 #define FN_DICT_PAGE32      0x48            /* as 0x41 with 32-bit addresses */
+#define FN_FUNCTIONS        0x49            /* the pin functions, as the board request's fn line */
 #define FN_SOURCE_INFO      0x50
 #define FN_SOURCE_WRITE     0x51
 #define FN_SOURCE_COMMIT    0x52
@@ -496,6 +499,13 @@ static void request_stack(void)
     answer("stack", reply, n);
 }
 
+/* one entry of the pin function table (rtl/forth_system.v): bit 15 on, bits 5..0 pin */
+static u16 pin_function(int f)
+{
+    Xil_Out32(FORTH_BASE + REG_FUNC, f);
+    return Xil_In32(FORTH_BASE + REG_FUNC) & 0xFFFF;
+}
+
 static void request_board(void)
 {
     u32 n = snprintf((char *)reply, sizeof reply, "board %08lX\nports",
@@ -514,6 +524,9 @@ static void request_board(void)
     n += snprintf((char *)reply + n, sizeof reply - n, "\npg %08lX %08lX",
                   (unsigned long)Xil_In32(FORTH_BASE + REG_PG_STATUS),
                   (unsigned long)Xil_In32(FORTH_BASE + REG_PG_OUT));
+    n += snprintf((char *)reply + n, sizeof reply - n, "\nfn");
+    for (int f = 0; f < FUNC_COUNT; f++)
+        n += snprintf((char *)reply + n, sizeof reply - n, " %04X", pin_function(f));
     reply[n++] = '\n';
     answer("board", reply, n);
 }
@@ -880,6 +893,13 @@ static u8 device(u8 function, const u8 *params, u8 param_length, u8 response_len
         mcnf_write_u32(payload, Xil_In32(FORTH_BASE + REG_PG_STATUS));
         mcnf_write_u32(payload + 4, Xil_In32(FORTH_BASE + REG_PG_OUT));
         *payload_length = 8;
+        return MCNF_ERR_NONE;
+
+    /* the pin functions: FUNC_COUNT entries as u16, as the board request's fn line */
+    case FN_FUNCTIONS:
+        for (i = 0; i < FUNC_COUNT; i++)
+            mcnf_write_u16(payload + 2 * i, pin_function(i));
+        *payload_length = 2 * FUNC_COUNT;
         return MCNF_ERR_NONE;
 
     case FN_SOURCE_INFO:

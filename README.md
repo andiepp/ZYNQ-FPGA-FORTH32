@@ -19,6 +19,12 @@ HF16) and kept separate from it: the board I/O, the app and the word names are t
   rounded number conversion, the board's LEDs, RGB LEDs, buttons and switches, 36 shield
   pins, 4 PWM channels, 9 analog inputs through the XADC (also in volts as floats), and the
   pattern generator.
+- **Serial interfaces on any pin**: 2 UARTs, 2 SPI masters (up to 12.5 MHz) and an I2C
+  master (on the shield's SCL/SDA by default), with words like `uart-open uart-emit
+  spi-xfer i2c@ i2c! i2c-scan`.
+- A **DDS** for a square wave of any frequency on any pin (200 MHz, 0.05 Hz steps) and a
+  **tone generator** on the board's audio jack (sine, square, triangle, sawtooth,
+  click-free volume): `1e6 dds-hz 13 dds-pin`, `440e tone`.
 - A **pattern generator**: 16 digital channels on the Pmod headers JA and JB, played in
   steps of 5 ns from its own 200 MHz clock; 4096 steps with repeats, jumps, waits for a
   pin, button or software trigger ([docs/PatternGenerator.md](docs/PatternGenerator.md)).
@@ -91,14 +97,14 @@ pg-stop 1 pg-enable 0 pg-at  1 500 ns pg-step  0 500 ns 0 pg-jump  pg-start
 
 | Path | Content |
 |---|---|
-| `rtl/` | the HF32 CPU, the multiply and floating-point unit, and the Forth system (Verilog): RAM, FIFOs, I/O, shield pins, PWM, XADC scanner, pattern generator, AXI-Lite slave |
+| `rtl/` | the HF32 CPU, the multiply and floating-point unit, and the Forth system (Verilog): RAM, FIFOs, I/O, shield pins and pin router, PWM, XADC scanner, pattern generator, UARTs, SPI, I2C, DDS, tone generator, AXI-Lite slave |
 | `constr/pins.xdc` | the Arty Z7-20 pins |
 | `hw/build_hw.tcl` | Vivado build: Zynq block design, bitstream, `.xsa` |
 | `forth/kernel.fs` | the Forth kernel |
 | `tools/hf32.py` | cross-compiler and instruction-set simulator (with a bit-exact model of the FPU) |
 | `tools/test_fpu.py`, `tools/test_float_words.py` | checks of the FPU model against IEEE and of the kernel's float words |
 | `sw/` | the ARM program (bare metal), build, JTAG run, boot image and flash scripts |
-| `sim/` | RTL testbenches (`run_sim.ps1` system, `run_mcu.ps1` FPU, `run_patgen.ps1`) and test inputs |
+| `sim/` | RTL testbenches (`run_sim.ps1` system, `run_mcu.ps1` FPU, `run_periph.ps1` serial interfaces/DDS/tone, `run_patgen.ps1`) and test inputs |
 | `app/` | the Windows app (C#, WPF, .NET 10) with its tests |
 | `tools/zforth.py` | a command-line client (pyserial) |
 | `examples/` | Forth sources |

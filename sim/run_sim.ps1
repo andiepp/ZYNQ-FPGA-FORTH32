@@ -30,6 +30,7 @@ $glbl = Join-Path (Split-Path $Vivado -Parent) 'data\verilog\src\glbl.v'   # for
 
 Push-Location $out
 try {
+    Remove-Item -Recurse -Force xsim.dir -ErrorAction SilentlyContinue    # no stale snapshot
     & "$Vivado\xvlog.bat" -nolog $rtl (Join-Path $root 'sim\tb_forth.v') $glbl | Select-String 'ERROR|WARNING'
     & "$Vivado\xelab.bat" -nolog -debug off -timescale 1ns/1ps -L unisims_ver tb glbl -s tb_snap | Select-String 'ERROR'
     & "$Vivado\xsim.bat" tb_snap -nolog -R |

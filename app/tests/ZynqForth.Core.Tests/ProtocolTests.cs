@@ -165,11 +165,30 @@ public class ParserTests
         Assert.Equal("A0", board.Pins.Single(p => p.Number == 14).Label);
         Assert.Equal(1, board.Pins.Single(p => p.Number == 27).PwmChannel);
         Assert.True(board.Pins.Single(p => p.Number == 27).Driven);
-        Assert.Equal(36, board.Pins.Count);
+        Assert.Equal(42, board.Pins.Count);
+        Assert.Equal("MISO", board.Pins.Single(p => p.Number == 44).Label);
+        Assert.Empty(board.Functions);                    // firmware before 3.1: no fn line
 
         Assert.InRange(board.Temperature, 33.5, 34.5);
         Assert.InRange(board.VccInt, 0.99, 1.01);
         Assert.InRange(board.Analog(0), 1.65, 1.67);
+    }
+
+    [Fact]
+    public void BoardFunctions()
+    {
+        // UART 0 on IO26 (TX) and IO27 (RX), I2C on SCL/SDA, the tone on; the rest off
+        string xadc = string.Join(' ', Enumerable.Repeat("0000", 32));
+        string fn = "801A 801B 0000 0000 0000 0000 0000 0000 0000 0000 802A 802B 0000 803F";
+        BoardState board = BoardState.Parse(
+            $"board 00000000\nports 00000000 00000000 00000000\npwm 00000000\nxadc {xadc}\npg 00000000 00000000\nfn {fn}\n");
+
+        Assert.Equal("TX0", board.Pins.Single(p => p.Number == 26).Function);
+        Assert.Equal("RX0", board.Pins.Single(p => p.Number == 27).Function);
+        Assert.Equal("SCL", board.Pins.Single(p => p.Number == 42).Function);
+        Assert.Equal("SDA", board.Pins.Single(p => p.Number == 43).Function);
+        Assert.Null(board.Pins.Single(p => p.Number == 28).Function);
+        Assert.True(board.ToneOn);
     }
 
     [Fact]

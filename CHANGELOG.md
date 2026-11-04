@@ -4,6 +4,28 @@ ZYNQ-FPGA-FORTH32 continues the version numbers of the 16-bit
 [ZYNQ-FORTH](https://github.com/andiepp/ZYNQ-FORTH) (whose changelog has releases 1.0 to
 2.3), as its 32-bit generation 3.x.
 
+## 3.1 — unreleased
+
+- **Serial interfaces in hardware**, every signal on any pin: two UARTs (8N1, any baud
+  rate, 64-byte FIFOs), two SPI masters (modes 0..3, 8/16/32 bits, MSB/LSB first, up to
+  12.5 MHz) and an I2C master (up to 400 kHz, open drain, clock stretching, on the shield's
+  SCL/SDA by default). Words: `uart-open uart-close uart-emit uart-type uart-key uart-key?
+  uart-status`, `spi-open spi-close spi-hz spi-mode spi-bits spi-lsb spi-xfer spi-write
+  spi-read`, `i2c-open i2c-open-pins i2c-close i2c@ i2c! i2c-scan i2c-probe i2c-addr
+  i2c-start i2c-stop i2c-write i2c-read`.
+- **DDS**: a square wave on any pin from a 32-bit phase accumulator at 200 MHz (0.047 Hz
+  steps, 5 ns edges): `dds-hz dds-pin dds-off`.
+- **Tone generator** on the board's audio jack: sine, square, triangle, sawtooth, a
+  click-free volume ramp, delta-sigma output into the board's filter: `tone tone-off wave
+  volume beep`, constants `sine square triangle sawtooth`.
+- **Pins 42..47**: the shield's SCL and SDA and the SPI header's MISO, MOSI, SCK, SS are now
+  pins too (`pin-scl` … `pin-ss`), usable as GPIO. A **pin router** gives peripherals their
+  pins; the kernel records the owner of each pin (`owner`) and refuses a pin that is taken
+  (` pin taken`), PWM included.
+- Firmware 3.1: the `board` answer's `fn` line and HASE function 0x49 report the pin
+  functions; the app's board view shows the six new pins and labels pins a peripheral owns.
+- I/O decoding widened to 256 registers; the new blocks live at `$100200..$1002AC`.
+
 ## 3.0 — 2026-11-03
 
 Started from ZYNQ-FORTH 2.3.

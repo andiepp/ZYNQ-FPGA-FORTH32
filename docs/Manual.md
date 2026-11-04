@@ -90,8 +90,8 @@ board as its Forth-Lab instrument: the board notices the HASE host's protocol an
 to it, and back as soon as a terminal program or the app sends anything. Output Forth
 printed meanwhile and nobody fetched then appears first (docs/Protocol.md, "HASE mode").
 
-For HASE, firmware 3.0 is the same Forth-Lab node as the 16-bit firmware (node type
-AE.07.30.80, reporting firmware 3.0), so a HASE Forth-Lab panel built for the 16-bit board
+For HASE, firmware 3.x is the same Forth-Lab node as the 16-bit firmware (node type
+AE.07.30.80, reporting firmware 3.1), so a HASE Forth-Lab panel built for the 16-bit board
 works with it unchanged, showing 16-bit cells: values outside −32768..32767 appear clipped,
 and dictionary addresses above `$FFFF` appear as `$FFFF`. Since HASE-Lab's ADR-0092
 (2026-11-03) the panel reads the new MCNF functions 0x45 to 0x48 (docs/Protocol.md) for
@@ -102,7 +102,7 @@ manual.
 ### First session
 
 ```
-[zynq-forth32] 3.0, kernel 5007 words loaded and verified
+[zynq-forth32] 3.1, kernel 6011 words loaded and verified
 
 HF32 Forth on Arty Z7-20
 2 3 + . 5  ok
@@ -146,7 +146,7 @@ IO13; the stack holds 12, 100 and -42.*
 
 ### 2.1 Connecting
 
-1. Start **ZynqForth32.exe** (version 3.0). It keeps its preferences, and the copy of this
+1. Start **ZynqForth32.exe** (version 3.1). It keeps its preferences, and the copy of this
    manual it opens, in `%LocalAppData%\ZYNQ-FPGA-FORTH32`, apart from those of the 16-bit
    ZYNQ-FORTH app, so both apps can be installed side by side.
 2. Choose the board's port in the list at the top left (**↻** looks for ports again) and click
@@ -361,12 +361,14 @@ board as Forth sees it, read four times a second:
 - **LEDs** LD3..LD0 (`led!`) and the **RGB** LEDs LD5 and LD4 in their colour (`rgb!`);
 - **Buttons** BTN3..BTN0 and **switches** SW1, SW0, highlighted when pressed or on;
 - the **shield** pins, in the order of the board's headers: upper row IO0..IO13 and A0..A5,
-  lower row IO26..IO41. Each pin is coloured by what it does: an input reading 1 or 0, an
-  output driving 1 or 0, or a pin owned by a PWM channel (marked `~` and the channel
-  number). Inputs read 1 when open because of the pull-ups (section 5.11);
+  lower row IO26..IO41, then SCL, SDA and the SPI header's MISO, MOSI, SCK, SS. Each pin is
+  coloured by what it does: an input reading 1 or 0, an output driving 1 or 0, or a pin
+  owned by a function: a PWM channel (marked `~` and the channel number) or a signal of a
+  serial interface or the DDS (marked with it, for example `TX0`, `MISO1`, `SDA`, `DDS`;
+  firmware 3.1). Inputs read 1 when open because of the pull-ups (section 5.11);
 - the voltages on A0..A5 under their pins, and on the differential pairs A6/A7, A8/A9,
   A10/A11, the chip temperature and two supplies (section 5.12);
-- which PWM channels are on, and their pins;
+- which PWM channels are on, and their pins, and *tone on* while the tone generator sounds;
 - at the right, the Pmod headers **JA** and **JB** with the pattern generator's 16 channels,
   each driven high, driven low, or not enabled, and the generator's state: *stopped*,
   *running · step n*, *waiting for the trigger*, *ended*, and *late* when a step ran late
@@ -577,6 +579,11 @@ The I/O registers can also be read and written directly with `@` and `!`. Regist
 | `$100080`–`$1000FC` | XADC registers 0..31 (`xadc@`) | – |
 | `$100100`–`$10013C` | PWM channels 0..3 (section 5.13) | PWM registers |
 | `$100180`–`$1001A8` | pattern generator (section 5.14) | pattern generator |
+| `$100200`–`$10021C` | UART 0 and 1, 16 bytes each (section 5.16) | serial interfaces |
+| `$100220`–`$10025C` | SPI masters 0 and 1, 32 bytes each (section 5.16) | serial interfaces |
+| `$100260`–`$100268` | I2C master (section 5.16) | serial interfaces |
+| `$100280`–`$100284` | DDS (section 5.17) | DDS |
+| `$1002A0`–`$1002AC` | tone generator (section 5.17) | tone generator |
 
 Section 5.11 explains the ports, 5.12 the XADC registers, 5.13 the PWM registers and 5.14
 the pattern generator's.
@@ -662,7 +669,7 @@ saved source at `0xFF0000`, so the two never overwrite each other.
 
 ## 5. Word reference
 
-The kernel has 354 words. Section 5.22 lists the internal ones, which mainly serve the
+The kernel has 354 words. Section 5.24 lists the internal ones, which mainly serve the
 interpreter, the compiler and the floating-point words. Where a word differs from standard
 Forth, its entry says so.
 
@@ -889,9 +896,12 @@ The shield connector's digital pins are numbered like their labels on the board:
 | 0..13 | IO0..IO13 (outer digital header) | yes |
 | 14..19 | A0..A5, the analog pins used as digital pins | no |
 | 26..41 | IO26..IO41 (inner digital header) | yes |
+| 42, 43 | SCL, SDA (`pin-scl`, `pin-sda`), next to AREF | resistors on the board |
+| 44..47 | the SPI header's MISO, MOSI, SCK, SS (`pin-miso`, `pin-mosi`, `pin-sck`, `pin-ss`) | yes |
 
 Every pin is an **input after start-up** and after Ctrl-R. `output` makes it drive the
-level of its output latch, which starts low.
+level of its output latch, which starts low. A pin that a PWM channel, a serial interface
+or the DDS owns (sections 5.13, 5.16, 5.17) follows that peripheral instead.
 
 | Word | Stack | Description |
 |---|---|---|
@@ -1020,8 +1030,8 @@ computes or waits for input. Each channel drives **any shield digital pin** (sec
 
 | Word | Stack | Description |
 |---|---|---|
-| `pwm-pin` | `( pin ch -- )` | Route channel ch to the pin and start it. The pin becomes an output driven by the channel; ` bad pin` for numbers that are not shield pins. |
-| `pwm-off` | `( ch -- )` | Stop the channel. Its pin returns to its own latch and direction (an input after start-up). |
+| `pwm-pin` | `( pin ch -- )` | Route channel ch to the pin and start it. The pin becomes an output driven by the channel; ` bad pin` for numbers that are not shield pins, ` pin taken` for a pin another channel or peripheral owns (section 5.16). |
+| `pwm-off` | `( ch -- )` | Stop the channel and free its pin. The pin returns to its own latch and direction (an input after start-up). |
 | `pwm-hz` | `( u ch -- )` | Frequency in Hz, 1..25000000. |
 | `pwm-khz` | `( u ch -- )` | Frequency in kHz, 1..25000. |
 | `pwm-duty` | `( permille ch -- )` | Duty cycle in ‰ (tenths of a percent), 0..1000: 0 is always low, 1000 always high; values outside are clamped. |
@@ -1420,7 +1430,135 @@ The analog words `volts@` and `ftemp@` (section 5.12) deliver their readings as 
   `1e f+ fln` and `fexp 1e f-` would lose most of them. `f**` loses digits when r2 × ln r1
   is large, for example for r1 close to 1 and a large r2.
 
-### 5.16 Defining words
+### 5.16 Serial interfaces
+
+Firmware 3.1 has two UARTs, two SPI masters and an I2C master in the FPGA. Every one of
+their signals can use **any pin** (section 5.11): a peripheral that is opened owns its pins
+until it is closed, and the pins' latch and direction no longer count. Opening a
+peripheral on a pin that another one owns gives ` pin taken`, and nothing is claimed.
+
+**UART** u = 0 or 1: 8 data bits, no parity, 1 stop bit, any baud rate (the divider is
+50 MHz / baud), 64-byte FIFOs for sending and receiving. IO0/IO1 are the usual pins for
+an Arduino shield's serial port.
+
+| Word | Stack | Description |
+|---|---|---|
+| `uart-open` | `( baud tx rx u -- )` | Open UART u at the baud rate, sending on pin tx and receiving on pin rx: `115200 1 0 0 uart-open` (TX on IO1, RX on IO0). |
+| `uart-close` | `( u -- )` | Close it and free its pins. |
+| `uart-emit` | `( c u -- )` | Send a byte; waits while the send FIFO is full. |
+| `uart-type` | `( a n u -- )` | Send a string. |
+| `uart-key?` | `( u -- f )` | True if a received byte is waiting. |
+| `uart-key` | `( u -- c )` | The next received byte; waits for one. |
+| `uart-status` | `( u -- bits )` | Bit 2: everything sent; bit 3: a received byte was lost because the FIFO was full; bit 4: a byte had no stop bit (wrong baud rate?). Reading clears bits 3 and 4. |
+
+```
+115200 26 27 0 uart-open  115200 28 29 1 uart-open   \ wires IO26-IO29, IO28-IO27
+65 0 uart-emit  1 uart-key emit A  ok
+create msg 104 c, 105 c,        \ "hi"
+msg 2 1 uart-type  0 uart-key emit 0 uart-key emit hi ok
+```
+
+**SPI master** s = 0 or 1: modes 0..3, 8, 16 or 32 bits per transfer, most or least
+significant bit first, SCK up to 12.5 MHz. The chip select is an ordinary pin that your
+program drives (`high`, `low`), because devices differ in how long it stays low. The SPI
+header's pins are `pin-sck`, `pin-mosi`, `pin-miso` and `pin-ss`.
+
+| Word | Stack | Description |
+|---|---|---|
+| `spi-open` | `( sck mosi miso s -- )` | Open SPI master s on these pins; mode 0, 8 bits, 1 MHz until changed. |
+| `spi-close` | `( s -- )` | Close it and free its pins. |
+| `spi-hz` | `( hz s -- )` | The SCK frequency: 25 MHz / an integer, at most 12.5 MHz (rounded down to the next possible one). |
+| `spi-mode` | `( mode s -- )` | Mode 0..3 (bit 1 CPOL: SCK idles high; bit 0 CPHA: data taken at the second edge). |
+| `spi-bits` | `( n s -- )` | 8, 16 or 32 bits per transfer. |
+| `spi-lsb` | `( f s -- )` | True: least significant bit first. |
+| `spi-xfer` | `( out s -- in )` | One transfer: sends out, returns what came back. |
+| `spi-write` | `( a n s -- )` | Send n bytes from a (the answers are dropped). |
+| `spi-read` | `( a n s -- )` | Receive n bytes into a (sending zeros). |
+
+```
+pin-sck pin-mosi pin-miso 0 spi-open  1000000 0 spi-hz
+pin-ss output pin-ss high                      \ the chip select, idle high
+pin-ss low $9F 0 spi-xfer drop 0 0 spi-xfer . pin-ss high   \ e.g. a flash's ID
+```
+
+**I2C master**: 100 kHz or 400 kHz (any rate up to 400 kHz), open-drain outputs, clock
+stretching (a slave may hold SCL low; after about 21 ms of that, ` i2c timeout`). The
+shield's **SCL** and **SDA** pins (`pin-scl`, `pin-sda`) have pull-up resistors on the
+board and are the default; other pins need external pull-ups (a few kΩ to 3.3 V): the
+FPGA's own pull-ups are far too weak for I2C. Addresses are 7-bit.
+
+| Word | Stack | Description |
+|---|---|---|
+| `i2c-open` | `( hz -- )` | Open the I2C master on SCL and SDA: `100000 i2c-open`. |
+| `i2c-open-pins` | `( hz scl sda -- )` | The same on other pins. |
+| `i2c-close` | `( -- )` | Close it and free its pins. |
+| `i2c@` | `( reg addr -- b )` | Read register reg of the device at addr: start, address+W, reg, repeated start, address+R, one byte, stop. ` no ack` if the device does not answer. |
+| `i2c!` | `( b reg addr -- )` | Write b into register reg of the device at addr. |
+| `i2c-scan` | `( -- )` | Print the address (in hex) of every device that answers, from $08 to $77. |
+| `i2c-probe` | `( addr -- f )` | True if a device answers at addr. |
+| `i2c-addr` | `( addr rw -- ack? )` | Start (or repeated start) and the address byte, rw 1 = read; true if acknowledged. |
+| `i2c-start` | `( -- )` | A start condition. |
+| `i2c-stop` | `( -- )` | A stop condition. |
+| `i2c-write` | `( b -- ack? )` | Send a byte; true if the device acknowledged it. |
+| `i2c-read` | `( ack? -- b )` | Receive a byte, then acknowledge it (true: more bytes follow) or not (false: the last one). |
+
+```
+100000 i2c-open  i2c-scan
+68                              \ e.g. a DS3231 clock at $68
+0 $68 i2c@ .                    \ its seconds register
+```
+
+A longer transfer is built from the low-level words, for example 6 bytes from register
+$3B of a sensor at $68: `$68 0 i2c-addr drop $3B i2c-write drop $68 1 i2c-addr drop`, then
+five times `-1 i2c-read` and once `0 i2c-read`, then `i2c-stop`.
+
+**Pin owners.** `owner ( pin -- id )` shows who owns a pin: 0 nobody (the pin is GPIO),
+1..4 PWM channels 0..3, 5 UART 0, 6 UART 1, 7 SPI 0, 8 SPI 1, 9 I2C, 10 the DDS. The board
+view in the app labels owned pins (section 2.9).
+
+### 5.17 DDS and tone generator
+
+**DDS** (direct digital synthesis): a square wave of any frequency on any pin, from a
+32-bit phase accumulator on the pattern generator's 200 MHz clock. The frequency steps
+are 0.047 Hz, and the edges lie on the 5 ns grid: at 1 MHz a period is 200 ticks, at
+3 MHz it alternates between 66 and 67 ticks (5 ns of jitter), so its average is exact.
+Up to a few MHz the shield pins pass the edges well.
+
+| Word | Stack | Description |
+|---|---|---|
+| `dds-hz` | `( F: hz -- )` | The frequency, a float: `1000000e dds-hz`. Can change while it runs. |
+| `dds-pin` | `( pin -- )` | Start it on the pin (or move it to another one). |
+| `dds-off` | `( -- )` | Stop it and free the pin. |
+
+```
+32768e dds-hz 13 dds-pin        \ a 32.768 kHz clock on IO13
+1e6 dds-hz                      \ now 1 MHz
+dds-off
+```
+
+**Tone generator**: the board's **audio jack** (next to the USB connector, mono) with a
+sine, square, triangle or sawtooth wave of 0.012 Hz to about 17 kHz, the corner of the
+board's low-pass filter. A delta-sigma modulator at 50 MHz drives AUD_PWM into the filter;
+the amplifier (AUD_SD) is on while there is sound. The volume moves to a new value in a
+straight 2 ms ramp, so tones start and stop without clicks.
+
+| Word | Stack | Description |
+|---|---|---|
+| `tone` | `( F: hz -- )` | Play the frequency: `440e tone`. Can change while it plays. |
+| `tone-off` | `( -- )` | Stop (the volume ramps down in 2 ms). |
+| `wave` | `( n -- )` | The waveform: `sine` (0, after start-up), `square`, `triangle` or `sawtooth`. |
+| `volume` | `( percent -- )` | 0..100, 50 after start-up. |
+| `beep` | `( ms -- ) ( F: hz -- )` | A tone for ms milliseconds: `200 880e beep`. |
+
+```
+50 volume sine wave  440e tone  1000 ms  tone-off
+: scale ( -- ) 8 0 do 300 261.63e i s>f 12e f/ 2e fswap f** f* beep loop ;
+```
+
+(`scale` is a chromatic run upwards from middle C.) Headphones or a small active speaker
+go in the jack; its level is line level.
+
+### 5.18 Defining words
 
 | Word | Stack | Description |
 |---|---|---|
@@ -1451,7 +1589,7 @@ of its old version:
 
 Use `recurse` to call the word being defined.
 
-### 5.17 Control structures
+### 5.19 Control structures
 
 These are immediate and work **only inside colon definitions**.
 
@@ -1488,7 +1626,7 @@ table 1 2 2 4  ok
 : find3 10 0 do i 3 = if ." found" unloop exit then loop ." none" ;
 ```
 
-### 5.18 Compiler and execution
+### 5.20 Compiler and execution
 
 | Word | Stack | Description |
 |---|---|---|
@@ -1509,7 +1647,7 @@ five . 5  ok
 : quiet shout ;  loud ok       \ shout ran while quiet was compiled
 ```
 
-### 5.19 Comments
+### 5.21 Comments
 
 | Word | Description |
 |---|---|
@@ -1519,7 +1657,7 @@ five . 5  ok
 Both work at the terminal and inside definitions. Like every Forth word, each needs a
 space after it.
 
-### 5.20 Interpreter and system
+### 5.22 Interpreter and system
 
 | Word | Stack | Description |
 |---|---|---|
@@ -1528,13 +1666,13 @@ space after it.
 | `abort` | `( -- )` | Clear the data stack and the float stack and return to the interpreter loop. |
 | `cold` | `( -- )` | Restart: decimal base, `precision` 7, banner, LD0 on, interpreter loop. Your definitions stay. |
 
-### 5.21 Variables used by the system
+### 5.23 Variables used by the system
 
 | Word | Content |
 |---|---|
 | `dp` | Dictionary pointer: the value `here` returns. |
 | `latest` | Header address of the newest word. |
-| `state` | Compile state (section 5.18). |
+| `state` | Compile state (section 5.20). |
 | `base` | Number base (section 5.9). |
 | `tib` | Terminal input buffer (84 bytes). |
 | `#tib` | Number of characters in the current input line. |
@@ -1552,7 +1690,7 @@ space after it.
 
 Their names are in parentheses so that they keep out of the way of your own words.
 
-### 5.22 Internal words
+### 5.24 Internal words
 
 These words are visible in `words` and can be used, but they mainly exist for the kernel.
 
@@ -1645,6 +1783,20 @@ These words are visible in `words` and can be used, but they mainly exist for th
 | `?stack` | `( -- )` | Check both stacks for underflow or overflow (section 3.4). |
 
 ---
+
+**Serial interfaces and pin owners:** the helpers of sections 5.16 and 5.17.
+
+| Word | Stack | Description |
+|---|---|---|
+| `pin-owner` | `( -- a )` | 48 bytes: the owner of each pin (section 5.16, *Pin owners*). |
+| `(free)` | `( pin id -- pin )` | ` pin taken` unless the pin is free or owned by id. |
+| `claim` | `( pin id -- )` | Make id the owner of the pin. |
+| `(claim)` | `( pin id -- pin )` | `claim`, keeping the pin. |
+| `release` | `( id -- )` | Free every pin id owns. |
+| `cid` | `( -- a )` | The owner id while `spi-open` claims its pins. |
+| `(i2c)` | `( cmd -- status )` | Give the I2C master a command and wait until it is done; ` i2c timeout` when a slave held SCL low too long. |
+| `(ack?)` | `( f -- )` | ` no ack` (after a stop) if f is false. |
+| `dds-sync` | `( -- )` | Wait until the DDS took over the last change (it runs on its own clock). |
 
 ## 6. Examples
 
@@ -1979,3 +2131,8 @@ For the power-up, build `BOOT.bin` and write it to flash (see the README).
 | A result is `NaN`, `Inf` or 0 unexpectedly | An operation outside the range: 0/0, the square root or logarithm of a negative number, an overflow beyond 3.4 × 10^38 (infinity) or a result below 1.2 × 10^-38 (zero). Every later operation passes a NaN on (section 5.15, *Semantics*). |
 | ` float stack overflow`, or floats left over | Words that leave floats behind, for example a comparison expected to consume them. `f.s` shows the float stack; the app shows it under the data stack. |
 | `fsin` of a large angle is wrong | The argument reduction is accurate for \|x\| up to about 10000 (section 5.15, *Accuracy*). Reduce large angles yourself, in whole turns, before converting them to radians. |
+| ` pin taken` | The pin belongs to another peripheral or PWM channel: `owner` tells which (section 5.16). Close that one first, or use another pin. |
+| ` no ack` from `i2c@` or `i2c!` | No device answers at that address: check the wiring, the address (7-bit: `$68`, not `$D0`) and the pull-ups; `i2c-scan` lists what answers. |
+| ` i2c timeout` | SCL stayed low for 21 ms: a slave holds it, or SCL is shorted or lacks its pull-up. |
+| A UART receives garbage, or `uart-status` shows bit 4 | The baud rates differ, or TX and RX are swapped. Both sides need a common GND. |
+| No sound from the audio jack | `tone` needs a float (`440e tone`, not `440 tone`); `volume` may be 0. The jack gives line level: use headphones or an active speaker. |

@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <Version>3.0.0</Version>
+    <Version>3.1.0</Version>
     <Authors>andiepp</Authors>
     <Product>ZYNQ-FPGA-FORTH32</Product>
     <Copyright>Copyright (c) 2026 andiepp</Copyright>

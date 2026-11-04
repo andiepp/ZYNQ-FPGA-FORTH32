@@ -1,6 +1,6 @@
 # ZYNQ-FPGA-FORTH32 serial protocol
 
-Protocol version 2, firmware 3.0. Protocol 2 is protocol 1 of the 16-bit ZYNQ-FORTH with
+Protocol version 2, firmware 3.1. Protocol 2 is protocol 1 of the 16-bit ZYNQ-FORTH with
 32-bit cells: the `stack` answer carries 32-bit items and the float stack, and the `words`
 addresses have five hex digits. Everything else is unchanged.
 
@@ -138,6 +138,7 @@ ports 2000FFFB 08000000 00000000
 pwm 00002C02
 xadc A11D 56ED 998F 0000 …    32 XADC status registers
 pg 00030001 FFFF0001          pattern generator (firmware 2.2 and later)
+fn 801A 801B 0000 …           14 pin functions (firmware 3.1 and later)
 ```
 
 - `board`: bits 3..0 = LD3..LD0, bits 9..4 = RGB (bits 4/5/6 = LD4 red/green/blue,
@@ -157,6 +158,11 @@ pg 00030001 FFFF0001          pattern generator (firmware 2.2 and later)
   word: bits 31..16 = channel enable mask, bits 15..0 = current output levels (channel n = bit
   n; 0–7 on Pmod JA, 8–15 on JB). Older firmware sends no `pg` line; clients ignore lines they
   do not know.
+- `fn`: the pin functions of the serial interfaces, the DDS and the tone generator, in this
+  order: UART0 TX, UART0 RX, UART1 TX, UART1 RX, SPI0 SCK, SPI0 MOSI, SPI0 MISO, SPI1 SCK,
+  SPI1 MOSI, SPI1 MISO, I2C SCL, I2C SDA, DDS, tone. Bit 15 = on, bits 5..0 = the pin (pins
+  42..47 are SCL, SDA and the SPI header's MISO, MOSI, SCK, SS; the tone's 63 means the
+  audio jack). The `ports` words include pins 42..47 in bits 10..15 of the third word.
 
 ## HASE mode
 
@@ -199,6 +205,7 @@ Four new functions give the full values (big-endian like the others):
 | 0x46 float stack | – | depth (u8), then 20 floats as their IEEE single bits (u32), bottom first (81 bytes) |
 | 0x47 dictionary snapshot, 32 bits | – | as 0x40: count (u16), then `latest` and `here` as u32 (10 bytes) |
 | 0x48 dictionary page, 32 bits | first index (u16) | as 0x41, each entry's code address as u32: count (u8), then per entry xt (u32), flags (u8), length (u8), name; zero-padded to R − 2 |
+| 0x49 pin functions (firmware 3.1) | – | the `fn` line's 14 entries as u16 (28 bytes; R = 30) |
 
 0x45 and 0x46 refuse with 0x15 (busy) like 0x42. HASE-Lab's Forth-Lab family reads them from
 firmware 3.0 on (ADR-0092, 2026-11-03): its panel shows the 32-bit data stack, the float stack
