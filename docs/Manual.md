@@ -97,7 +97,9 @@ and dictionary addresses above `$FFFF` appear as `$FFFF`. Since HASE-Lab's ADR-0
 (2026-11-03) the panel reads the new MCNF functions 0x45 to 0x48 (docs/Protocol.md) for
 firmware 3.x: its heading says HF32, the stack view shows 32-bit cells and, under them, the
 float stack, dictionary addresses have five hex digits, and its Manual button opens this
-manual.
+manual. Since ADR-0093 (2026-11-04) it also reads function 0x49 for firmware 3.1: its board
+view shows SCL, SDA and the SPI header's pins and labels the pins the serial interfaces and
+the DDS own, as the app does (section 2.9).
 
 ### First session
 

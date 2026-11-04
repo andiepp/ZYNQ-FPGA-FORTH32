@@ -209,7 +209,9 @@ Four new functions give the full values (big-endian like the others):
 
 0x45 and 0x46 refuse with 0x15 (busy) like 0x42. HASE-Lab's Forth-Lab family reads them from
 firmware 3.0 on (ADR-0092, 2026-11-03): its panel shows the 32-bit data stack, the float stack
-and five-digit dictionary addresses, and opens this project's manual.
+and five-digit dictionary addresses, and opens this project's manual. It reads 0x49 from
+firmware 3.1 on (ADR-0093, 2026-11-04) and adds the `fn` line to its board text: the panel's
+board view shows pins 42..47 and the pins the serial interfaces and the DDS own.
 
 ## Example in Python
 

@@ -17,6 +17,13 @@ import sys
 import markdown
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def release_version():
+    """The release, as app/Directory.Build.props names it (3.1.0 -> 3.1)."""
+    props = pathlib.Path(HERE, 'app', 'Directory.Build.props').read_text(encoding='utf-8')
+    version = re.search(r'<Version>(\d+)\.(\d+)', props)
+    return f'{version.group(1)}.{version.group(2)}'
 SRC = os.path.join(HERE, 'docs', 'Manual.md')
 PDF = os.path.join(HERE, 'docs', 'Manual.pdf')
 HTML = os.path.join(HERE, 'build', 'Manual.html')
@@ -87,7 +94,7 @@ def build_html(md_text):
 <div class="cover">
   <h1>ZYNQ-FPGA-FORTH32</h1>
   <div class="sub">User Manual &mdash; a 32-bit Forth CPU with floating point on the Digilent Arty Z7-20</div>
-  <div class="meta">ZYNQ-FPGA-FORTH32 3.0<br>Generated {today} from docs/Manual.md</div>
+  <div class="meta">ZYNQ-FPGA-FORTH32 {release_version()}<br>Generated {today} from docs/Manual.md</div>
 </div>"""
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<title>ZYNQ-FPGA-FORTH32 User Manual</title><style>{CSS}</style></head>'
